@@ -8,7 +8,9 @@
   <ul class="deck-list">
     <% @decks.each do |deck| %>
       <li>
-        <%= link_to deck.name, deck, class: "deck-name" %>
+        <%# One click on the deck starts studying; details live behind the
+            button so the common action needs no intermediate page. %>
+        <%= link_to deck.name, study_deck_path(deck), class: "deck-name" %>
         <span class="deck-meta"><%= deck.is_public? ? "public" : "private" %></span>
         <span class="deck-meta">
           <% due = @due_counts[deck.id].to_i %>
@@ -20,6 +22,7 @@
             <%= new_left %> new
           <% end %>
         </span>
+        <%= link_to "Details", deck, class: "btn btn--secondary btn--compact", "aria-label": "Details for #{deck.name}" %>
       </li>
     <% end %>
   </ul>

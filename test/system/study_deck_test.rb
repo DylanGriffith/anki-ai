@@ -57,6 +57,9 @@ class StudyDeckTest < ApplicationSystemTestCase
       })()
     JS
     assert spans_bar, "Show Answer should span the full answer bar width"
+    show_h = page.evaluate_script(
+      "document.querySelector(\".answer-bar input[value='Show Answer']\").getBoundingClientRect().height"
+    )
     evidence("step3_study_question")
 
     click_submit("Show Answer")
@@ -74,6 +77,15 @@ class StudyDeckTest < ApplicationSystemTestCase
       })()
     JS
     assert one_row, "rating buttons should share a single row in the answer bar"
+    # ...at the same height as Show Answer, so nothing shifts between pages
+    equal_height = page.evaluate_script(<<~JS, show_h)
+      (() => {
+        const h = arguments[0];
+        return [...document.querySelectorAll(".answer-bar button[name='rating']")]
+          .every(b => Math.abs(b.getBoundingClientRect().height - h) < 1);
+      })()
+    JS
+    assert equal_height, "answer bar buttons should all be the same height"
     evidence("step3_study_answer")
 
     # Rate Good: card moves to learning (10 min), next card shows
