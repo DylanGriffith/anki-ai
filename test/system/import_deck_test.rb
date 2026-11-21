@@ -34,6 +34,37 @@ class ImportDeckTest < ApplicationSystemTestCase
     end
   end
 
+  test "re-importing a taken deck name fails fast with a friendly message" do
+    User.create!(name: "dylan", password: "password123")
+    apkg = AnkiApkgBuilder.new
+      .add_model(id: 1600000000001, name: "Basic", fields: %w[Front Back],
+                 templates: [ { name: "Card 1", front: "{{Front}}", back: "{{Back}}" } ])
+      .add_deck(id: 1650000000001, name: "Test French")
+      .add_note(id: 1600000000101, guid: "g1", mid: 1600000000001, fields: %w[hello bonjour])
+      .add_card(id: 1600000000201, nid: 1600000000101, did: 1650000000001, due: 1)
+
+    with_apkg(apkg, "dup-first") do |path|
+      sign_in_as("dylan", "password123")
+      click_on "Import .apkg"
+      attach_file "file", path
+      click_submit("Import")
+      assert_selector "h1", text: "Test French"
+    end
+
+    # Second import with the same derived name: rejected without doing the
+    # heavy extraction work, with the friendly message.
+    with_apkg(apkg, "dup-second") do |path|
+      visit decks_path
+      click_on "Import .apkg"
+      attach_file "file", path
+      click_submit("Import")
+
+      assert_selector "h1", text: "Import Anki deck"
+      assert_text "Import failed: you already have a deck named “Test French”."
+      evidence("dup_name_fast_fail")
+    end
+  end
+
   test "shows an error for a non-apkg file" do
     User.create!(name: "dylan", password: "password123")
     bad = Tempfile.new([ "bad", ".apkg" ])

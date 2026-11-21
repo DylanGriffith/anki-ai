@@ -5,6 +5,13 @@ module Decks
   # see ARCHITECTURE.md decision 3). Importing user gets card_states derived
   # from Anki's SM-2 columns using Anki's own migration heuristics.
   class Import
+    # The user already owns a deck with the requested/derived name.
+    class DuplicateNameError < StandardError
+      def initialize(name)
+        super("you already have a deck named “#{name}”. Import again with a different name.")
+      end
+    end
+
     def self.call(user, path, name: nil)
       new(user, path, name: name).call
     end
@@ -16,13 +23,23 @@ module Decks
     end
 
     def call
+      # Fail fast: an explicitly taken deck name needs no file processing.
+      validate_name_availability!(@name) if @name.present?
+
       package = Anki::Apkg::Package.new(@path)
-      package.extract! do |pkg|
-        collection = package.collection
+      package.with_package do |pkg|
+        # Cheap first pass: collection members only, enough to derive the
+        # deck name — big media archives are only extracted once the name
+        # is known to be good.
+        pkg.extract_collections!
+        collection = pkg.collection
         read_source_rows(collection)
         # All source rows (and models/decks/crt) are read eagerly; release
         # the collection's file descriptor before the bulk inserts.
         collection.close
+        validate_name_availability!(deck_name)
+
+        pkg.extract_media!
         Deck.transaction do
           deck = create_deck
           note_types = import_note_types(deck)
@@ -53,9 +70,26 @@ module Decks
     def create_deck
       Deck.create!(
         user: @user,
-        name: @name.presence || derived_name,
+        name: deck_name,
         description: derived_description
       )
+    end
+
+    # The deck's name: the explicit override, or the name derived from the
+    # collection. Resolved once after the source rows are read and validated
+    # for availability before any heavy extraction work.
+    def deck_name
+      @deck_name ||= @name.presence || derived_name
+    end
+
+    # Raises DuplicateNameError before heavy work when the importing user
+    # already owns a deck with this name (Deck.create! still enforces
+    # uniqueness as the race-safe backstop).
+    def validate_name_availability!(name)
+      return if name.blank?
+      return unless @user.decks.exists?(name: name)
+
+      raise DuplicateNameError.new(name)
     end
 
     def derived_name

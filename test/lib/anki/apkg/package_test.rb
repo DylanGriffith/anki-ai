@@ -56,6 +56,23 @@ class Anki::Apkg::PackageTest < ActiveSupport::TestCase
     end
   end
 
+  test "extracts in two phases: collections first, media only when asked" do
+    with_apkg(build_package, "phased") do |path|
+      Anki::Apkg::Package.new(path).with_package do |pkg|
+        pkg.extract_collections!
+
+        # The collection is readable without extracting any media.
+        assert_equal({ notes: 2, cards: 2, revlog: 1 }, pkg.collection.counts)
+        assert_equal({ }, pkg.media_manifest) # manifest not extracted yet
+        assert_nil pkg.media_member(0)
+
+        pkg.extract_media!
+        assert_equal({ "0" => "word.mp3", "1" => "image.png" }, pkg.media_manifest)
+        assert_equal "fake-mp3-bytes", pkg.media_member(0).read
+      end
+    end
+  end
+
   test "prefers collection.anki21 over collection.anki2" do
     path = build_package.write(Tempfile.new(%w[test .apkg]).path)
     # Re-zip the same collection as .anki21 alongside .anki2

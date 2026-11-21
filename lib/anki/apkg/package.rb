@@ -11,6 +11,7 @@ module Anki
     class Package
       MANIFEST_MEMBER = "media"
       COLLECTION_PREFERENCE = %w[collection.anki21 collection.anki2].freeze
+      COLLECTION_MEMBERS = %w[collection.anki2 collection.anki21 collection.anki21b].freeze
       SQLITE_HEADER = "SQLite format 3".freeze
 
       def initialize(path)
@@ -21,16 +22,44 @@ module Anki
       # Extracts the whole archive to a temp dir, yields the package, then
       # removes the temp dir. One unzip invocation; media members are then
       # plain files named after their manifest numbers.
-      def extract!
+      def extract!(&block)
+        with_package do
+          unzip!
+          decompress_modern_media!
+          block.call(self)
+        end
+      end
+
+      # Opens the archive's temp dir for the given block (yielding the
+      # package) and cleans it up afterwards, without extracting anything.
+      # Callers that want to fail fast (e.g. validate a deck name) can
+      # extract_collections! first and only pay for the full media
+      # extraction once they know the import will proceed.
+      def with_package
         Dir.mktmpdir("anki-apkg-") do |dir|
           @workdir = Pathname.new(dir)
-          out, err, status = Open3.capture3("unzip", "-oq", @path.to_s, "-d", dir)
-          raise Error, "unzip failed: #{err.presence || out}" unless status.success?
-          decompress_modern_media!
           yield self
         ensure
           @workdir = nil
         end
+      end
+
+      # Extracts just the collection members — enough to read the source
+      # rows and derive the deck name in a fraction of the full time for
+      # big archives.
+      def extract_collections!
+        raise Error, "not opened; call with_package (or extract!) with a block" unless @workdir
+
+        unzip!(*COLLECTION_MEMBERS)
+      end
+
+      # Extracts everything else (media manifest and members) and
+      # decompresses modern-format members in place.
+      def extract_media!
+        raise Error, "not opened; call with_package (or extract!) with a block" unless @workdir
+
+        unzip!(exclude: COLLECTION_MEMBERS)
+        decompress_modern_media!
       end
 
       def collection
@@ -52,7 +81,7 @@ module Anki
       # "Please update to the latest Anki version"). So anki21b, when
       # present, is authoritative; legacy members are only used alone.
       def real_collection_path
-        raise Error, "not extracted; call extract! with a block" unless @workdir
+        raise Error, "not opened; call with_package (or extract!) with a block" unless @workdir
 
         anki21b = @workdir.join("collection.anki21b")
         if anki21b.file?
@@ -78,6 +107,22 @@ module Anki
         File.binread(path.to_s, 16).to_s.start_with?(SQLITE_HEADER)
       end
 
+      # Extracts the archive. Members selects specific archive members to
+      # extract; exclude: skips them instead. unzip exits 11 when a member
+      # pattern matches nothing (e.g. no anki21b in a legacy package) —
+      # that's fine, anything else is a real failure.
+      def unzip!(*members, exclude: [])
+        raise Error, "not opened; call with_package (or extract!) with a block" unless @workdir
+
+        args = [ "unzip", "-oq", @path.to_s, *members ]
+        args += [ "-x", *exclude ] if exclude.any?
+        args += [ "-d", @workdir.to_s ]
+        out, err, status = Open3.capture3(*args)
+        return if status.success? || status.exitstatus == 11
+
+        raise Error, "unzip failed: #{err.presence || out}"
+      end
+
       # In Anki 23.10+ exports the media members are zstd-compressed just
       # like the manifest, so a zstd manifest means every numeric member
       # must be decompressed in place before use. Legacy packages have a
@@ -101,16 +146,13 @@ module Anki
       # message whose repeated field 1 entries carry the filenames in zip
       # member order.
       def media_manifest
-        @media_manifest ||= begin
-          member = @workdir.join(MANIFEST_MEMBER)
-          if member.file?
-            raw = File.binread(member.to_s)
-            raw = Anki::Zstd.decompress(raw) if Anki::Zstd.zstd?(raw)
-            parse_manifest(raw)
-          else
-            {}
-          end
-        end
+        member = @workdir&.join(MANIFEST_MEMBER)
+        return {} unless member&.file?
+        return @media_manifest if instance_variable_defined?(:@media_manifest)
+
+        raw = File.binread(member.to_s)
+        raw = Anki::Zstd.decompress(raw) if Anki::Zstd.zstd?(raw)
+        @media_manifest = parse_manifest(raw)
       end
 
       def parse_manifest(raw)
@@ -126,7 +168,7 @@ module Anki
 
       # Path of the extracted member for a manifest number.
       def media_member(number)
-        raise Error, "not extracted; call extract! with a block" unless @workdir
+        raise Error, "not opened; call with_package (or extract!) with a block" unless @workdir
 
         path = @workdir.join(number.to_s)
         path.file? ? path : nil

@@ -231,6 +231,30 @@ class Decks::ImportTest < ActiveSupport::TestCase
     assert after <= before + 2, "leaked file descriptors during import: #{before} -> #{after}"
   end
 
+  # A taken name must fail before any file processing: the path below does
+  # not even exist, so reaching the name error proves the file was never
+  # touched (fast feedback in the UI instead of a full extraction pass).
+  test "fails fast on a taken explicit name without processing the file" do
+    user = build_user
+    user.decks.create!(name: "Taken")
+
+    error = assert_raises(Decks::Import::DuplicateNameError) do
+      Decks::Import.call(user, "/nonexistent.apkg", name: "Taken")
+    end
+    assert_match(/already have a deck named “Taken”/, error.message)
+  end
+
+  test "fails fast on a taken derived name" do
+    user = build_user
+    with_apkg(build_package, "first") { |path| Decks::Import.call(user, path) }
+
+    error = assert_raises(Decks::Import::DuplicateNameError) do
+      with_apkg(build_package, "second") { |path| Decks::Import.call(user, path) }
+    end
+    assert_match(/already have a deck named “Root Deck”/, error.message)
+    assert_equal 1, user.decks.where(name: "Root Deck").count
+  end
+
   # Anki's "Change Note Type" keeps GUIDs, so a collection can legitimately
   # hold distinct notes sharing a GUID (e.g. EN->FR and FR->EN of one word).
   test "imports notes that share a guid" do

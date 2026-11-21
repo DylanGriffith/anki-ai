@@ -7,9 +7,13 @@ task "import:apkg", [ :path, :user, :name ] => :environment do |_task, args|
   user = User.find_by!(name: user_name)
   name = args[:name].presence
   start = Time.current
-  deck = Decks::Import.call(user, path, name: name)
-  puts "Imported “#{deck.name}” for #{user.name}: " \
-       "#{deck.cards.count} cards, #{deck.notes.count} notes, " \
-       "#{deck.note_types.count} note types, #{deck.media_files.count} media files " \
-       "(#{(Time.current - start).round(1)}s)"
+  begin
+    deck = Decks::Import.call(user, path, name: name)
+    puts "Imported “#{deck.name}” for #{user.name}: " \
+         "#{deck.cards.count} cards, #{deck.notes.count} notes, " \
+         "#{deck.note_types.count} note types, #{deck.media_files.count} media files " \
+         "(#{(Time.current - start).round(1)}s)"
+  rescue Decks::Import::DuplicateNameError => e
+    abort "Import failed: #{e.message}"
+  end
 end
