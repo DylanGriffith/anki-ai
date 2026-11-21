@@ -12,7 +12,7 @@
       <style><%= CardHtml.css(@note_type) %></style>
       <%= @question_html %>
     </div>
-    <div class="actions">
+    <div class="answer-bar">
       <%= submit_tag "Show Answer", class: "btn", data: { study_target: "showAnswer" } %>
     </div>
   <% end %>

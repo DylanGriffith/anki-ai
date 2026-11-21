@@ -207,6 +207,30 @@ class Decks::ImportTest < ActiveSupport::TestCase
     assert_equal 250, deck.cards.where("anki_card_id >= 1600002000000").count
   end
 
+  # Regression for Errno::EMFILE on big imports through the web UI: every
+  # media file used to leave an open handle behind, exhausting the file
+  # descriptor limit (~256 by default on macOS) around the 250th file.
+  test "importing many media files does not leak file descriptors" do
+    fd_dir = File.directory?("/proc/self/fd") ? "/proc/self/fd" : "/dev/fd"
+    open_fds = -> { Dir.glob(File.join(fd_dir, "*")).size }
+
+    pkg = AnkiApkgBuilder.new(crt: CRT)
+      .add_model(id: 1600000000001, name: "Basic", fields: %w[Front Back],
+                 templates: [ { name: "Card 1", front: "{{Front}}", back: "{{Back}}" } ],
+                 req: [ [ 0, "any", [ "Front" ] ] ])
+      .add_deck(id: 1, name: "Default")
+      .add_note(id: 1600000000101, guid: "n1", mid: 1600000000001, fields: %w[front back])
+      .add_card(id: 1600000000201, nid: 1600000000101, did: 1, due: 1)
+    300.times { |i| pkg.add_media("m#{i}.mp3", "fake-bytes-#{i}") }
+
+    before = open_fds.call
+    deck = with_apkg(pkg, "fds") { |path| Decks::Import.call(build_user, path) }
+    after = open_fds.call
+
+    assert_equal 300, deck.media_files.count
+    assert after <= before + 2, "leaked file descriptors during import: #{before} -> #{after}"
+  end
+
   # Anki's "Change Note Type" keeps GUIDs, so a collection can legitimately
   # hold distinct notes sharing a GUID (e.g. EN->FR and FR->EN of one word).
   test "imports notes that share a guid" do

@@ -20,6 +20,9 @@ module Decks
       package.extract! do |pkg|
         collection = package.collection
         read_source_rows(collection)
+        # All source rows (and models/decks/crt) are read eagerly; release
+        # the collection's file descriptor before the bulk inserts.
+        collection.close
         Deck.transaction do
           deck = create_deck
           note_types = import_note_types(deck)
@@ -42,6 +45,7 @@ module Decks
       @cards = collection.each_card.to_a
       @revlog = collection.each_revlog.to_a
       @deck_names = collection.decks.transform_values { |d| d["name"] }
+      collection.models # warm memoized lookups used after the db is closed
       # did -> card count, to derive the deck name from where the cards live.
       @card_counts = @cards.each_with_object(Hash.new(0)) { |c, h| h[c["did"]] += 1 }
     end

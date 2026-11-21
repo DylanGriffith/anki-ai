@@ -112,8 +112,24 @@ button.linklike {
   min-height: 220px;
   display: flex; flex-direction: column;
 }
-.study-answer { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
-.study-answer .btn { flex: 1; min-width: 90px; text-align: center; }
+/* Answer bar: pinned to the bottom of the screen like the Anki app — one
+   row of buttons, always reachable without scrolling; card content scrolls
+   above it (and usually fits). */
+.answer-bar {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 20;
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+}
+.answer-bar .btn { flex: 1 1 0; min-width: 0; max-width: 220px; text-align: center; white-space: nowrap; }
+.answer-bar .btn small { display: block; font-size: 0.75rem; opacity: 0.85; }
+.study-card { margin-bottom: 110px; } /* scrolled content clears the bar */
 
 audio { width: 100%; margin-top: 12px; }
 
@@ -123,8 +139,6 @@ audio { width: 100%; margin-top: 12px; }
    sizes, so clamp with !important (like Anki's own reviewer does). */
 .anki-card img, .anki-card video, .anki-card svg { max-width: 100% !important; height: auto !important; }
 .anki-card table { max-width: 100%; display: block; overflow-x: auto; }
-.answer-divider { margin: 20px 0; border: none; border-top: 1px solid var(--border); }
-.study-answer .btn small { display: block; font-size: 0.75rem; opacity: 0.85; }
 .btn--easy { background: #1e7d32; border-color: #1e7d32; }
 .due-count { color: var(--accent); }
 .badge { background: #f0f0f0; border-radius: 4px; padding: 2px 6px; font-size: 0.75rem; color: var(--muted); }

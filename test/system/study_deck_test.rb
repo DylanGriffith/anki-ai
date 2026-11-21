@@ -43,6 +43,11 @@ class StudyDeckTest < ApplicationSystemTestCase
     # Card 1: question side, then reveal the answer
     assert_text "hello"
     assert_no_text "bonjour"
+    # Show Answer sits in the bottom-pinned answer bar
+    assert_selector ".answer-bar input[value='Show Answer']"
+    assert_equal "fixed", page.evaluate_script(
+      "getComputedStyle(document.querySelector('.answer-bar')).position"
+    )
     evidence("step3_study_question")
 
     click_submit("Show Answer")
@@ -50,6 +55,16 @@ class StudyDeckTest < ApplicationSystemTestCase
     assert_text "bonjour"
     assert_selector "button[name='rating'][value='1']", text: /Again/
     assert_selector "button[name='rating'][value='3']", text: /Good/
+    # Four rating buttons in one row, pinned to the bottom (Anki app style)
+    assert_selector ".answer-bar button[name='rating']", count: 4
+    one_row = page.evaluate_script(<<~JS)
+      (() => {
+        const btns = [...document.querySelectorAll(".answer-bar button[name='rating']")];
+        const tops = btns.map(b => Math.round(b.getBoundingClientRect().top));
+        return btns.length === 4 && tops.every(t => t === tops[0]);
+      })()
+    JS
+    assert one_row, "rating buttons should share a single row in the answer bar"
     evidence("step3_study_answer")
 
     # Rate Good: card moves to learning (10 min), next card shows

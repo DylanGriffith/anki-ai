@@ -13,7 +13,7 @@
         question here as well duplicates content (e.g. big images). %>
     <%= @answer_html %>
   </div>
-  <div class="study-answer">
+  <div class="answer-bar">
     <%= button_tag "Again <small>#{@intervals[0]}</small>".html_safe, name: "rating", value: 1, class: "btn btn--danger" %>
     <%= button_tag "Hard <small>#{@intervals[1]}</small>".html_safe, name: "rating", value: 2, class: "btn btn--secondary" %>
     <%= button_tag "Good <small>#{@intervals[2]}</small>".html_safe, name: "rating", value: 3, class: "btn" %>

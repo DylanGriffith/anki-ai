@@ -18,9 +18,20 @@ class MediaFile < ApplicationRecord
     CONTENT_TYPES[filename.to_s.split(".").last.to_s.downcase] || "application/octet-stream"
   end
 
+  # Eager upload: attach(io:) defers the actual disk write to the record's
+  # commit callback and needs the io to stay open until then — with nobody
+  # closing it, importing N media files held N open handles and exhausted
+  # the process fd limit (Errno::EMFILE) on big decks. Uploading inside the
+  # block lets the file close deterministically, and attaching by signed_id
+  # only creates the association.
   def attach_from(path)
     self.byte_size = File.size(path)
-    file.attach(io: File.open(path), filename: filename, content_type: content_type,
-                identify: false)
+    blob = File.open(path) do |io|
+      ActiveStorage::Blob.create_and_upload!(io: io, filename: filename,
+                                             content_type: content_type,
+                                             identify: false,
+                                             service_name: :local) # mirror has_one_attached service:
+    end
+    file.attach(blob.signed_id)
   end
 end

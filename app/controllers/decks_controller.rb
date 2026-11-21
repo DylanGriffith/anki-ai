@@ -47,6 +47,10 @@ class DecksController < ApplicationController
     deck = Decks::Import.call(current_user, upload.tempfile.path, name: params[:name].presence)
     redirect_to deck, notice: "Imported “#{deck.name}”: #{deck.cards.count} cards, " \
                               "#{deck.media_files.count} media files."
+  rescue ActiveRecord::RecordInvalid => e
+    flash.now[:alert] = "Import failed: you already have a deck named " \
+                        "“#{e.record.name}”. Import again with a different name."
+    render :import_form, status: :unprocessable_entity
   rescue Anki::Apkg::Error => e
     flash.now[:alert] = "Import failed: #{e.message}"
     render :import_form, status: :unprocessable_entity
