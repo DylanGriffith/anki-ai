@@ -1,0 +1,17 @@
+<div class="page-header">
+  <h1>Decks</h1>
+  <%= link_to "New deck", new_deck_path, class: "btn" %>
+</div>
+
+<% if @decks.any? %>
+  <ul class="deck-list">
+    <% @decks.each do |deck| %>
+      <li>
+        <%= link_to deck.name, deck, class: "deck-name" %>
+        <span class="deck-meta"><%= deck.is_public? ? "public" : "private" %></span>
+      </li>
+    <% end %>
+  </ul>
+<% else %>
+  <p class="empty">No decks yet. Create one, or import an Anki deck (<code>.apkg</code>) once import lands.</p>
+<% end %>

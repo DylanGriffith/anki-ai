@@ -1,0 +1,19 @@
+<div class="page-header">
+  <h1><%= @deck.name %></h1>
+  <span class="deck-meta"><%= @deck.is_public? ? "public" : "private" %></span>
+</div>
+
+<% if @deck.description.present? %>
+  <p class="deck-description"><%= @deck.description %></p>
+<% end %>
+
+<div class="card">
+  <p>Cards, studying and import will arrive in the next steps.</p>
+  <p class="muted">Daily limits: <%= @deck.new_per_day %> new, <%= @deck.reviews_per_day %> reviews.</p>
+</div>
+
+<div class="actions">
+  <%= button_to "Delete deck", deck_path(@deck), method: :delete, class: "btn btn--danger",
+        data: { turbo_confirm: "Delete this deck and all its cards?" } %>
+  <%= link_to "Back", decks_path, class: "btn btn--secondary" %>
+</div>
