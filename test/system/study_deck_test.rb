@@ -48,6 +48,15 @@ class StudyDeckTest < ApplicationSystemTestCase
     assert_equal "fixed", page.evaluate_script(
       "getComputedStyle(document.querySelector('.answer-bar')).position"
     )
+    # ...and spans the full bar width (padding aside)
+    spans_bar = page.evaluate_script(<<~JS)
+      (() => {
+        const bar = document.querySelector(".answer-bar").getBoundingClientRect();
+        const btn = document.querySelector(".answer-bar input[value='Show Answer']").getBoundingClientRect();
+        return bar.width - btn.width < 26;
+      })()
+    JS
+    assert spans_bar, "Show Answer should span the full answer bar width"
     evidence("step3_study_question")
 
     click_submit("Show Answer")

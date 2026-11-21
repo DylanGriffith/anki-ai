@@ -128,6 +128,7 @@ button.linklike {
   border-top: 1px solid var(--border);
 }
 .answer-bar .btn { flex: 1 1 0; min-width: 0; max-width: 220px; text-align: center; white-space: nowrap; }
+.answer-bar .btn--block { max-width: none; } /* Show Answer: spans the whole bar */
 .answer-bar .btn small { display: block; font-size: 0.75rem; opacity: 0.85; }
 .study-card { margin-bottom: 110px; } /* scrolled content clears the bar */
 

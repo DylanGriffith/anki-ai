@@ -13,7 +13,7 @@
       <%= @question_html %>
     </div>
     <div class="answer-bar">
-      <%= submit_tag "Show Answer", class: "btn", data: { study_target: "showAnswer" } %>
+      <%= submit_tag "Show Answer", class: "btn btn--block", data: { study_target: "showAnswer" } %>
     </div>
   <% end %>
 <% elsif @counts[:next_due_at] %>
