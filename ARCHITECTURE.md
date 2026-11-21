@@ -198,16 +198,27 @@ scripted fake server, and can be deleted without touching study/import code.
   tool results appended → repeat until the model calls `finish` or a turn/tool-call
   budget is hit. Each iteration appends to `ai_generations.transcript`, so the UI is a
   simple poll.
-- Tools: `create_deck(name, description, public)`, `upsert_note_type(name, fields,
-  front_template, back_template, css)`, `add_note(fields, tags)`, `update_note`,
+- Tools: `create_deck(name, description)`, `upsert_note_type(name, kind, fields,
+  front_template, back_template, css)`, `add_note(note_type, fields, tags)`, `update_note`,
   `delete_note`, `list_notes`, `finish(summary)`. The agent cannot touch existing decks
-  or anything outside its own generation.
-- `AiDeckGenerationJob` (Solid Queue) runs the loop; the "New AI Deck" form (description
-  + model dropdown from cached `/models` list) just enqueues and redirects to the
-  generation status page, which polls (Turbo frame refresh, 2s) until done/failed.
-- Tests: a fake OpenAI server (small Rack app mounted in tests) serves scripted
-  tool-call sequences; the agent runs end-to-end without network. E2E system test uses
-  the same fake so the real UI flow is covered.
+  or anything outside its own generation — tools are scoped to the deck this one
+  generation created. Tool errors are returned as results the model can see and correct
+  (only infrastructure errors fail a generation), and the loop is bounded (24 turns).
+- `Ai::GenerationJob` (Solid Queue) runs the loop and is safe to re-run; the
+  "New AI deck" form (description + model dropdown from the cached `/models` list —
+  free-text fallback when the API is unreachable) just enqueues and redirects to the
+  generation status page. While pending/running that page polls itself every 2s with a
+  plain `Turbo.visit(…, { action: "replace" })` — no framework, no websocket.
+- The API key is encrypted at rest with `ActiveSupport::MessageEncryptor` keyed from
+  `secret_key_base` (no Rails AR-encryption credentials setup to juggle).
+- Tests: a fake OpenAI server (`test/support/fake_openai_server.rb`) — a real local
+  HTTP server (Puma hosting a Rack app, no new dependency) serving scripted
+  tool-call sequences. The agent's real Net::HTTP path runs end-to-end without
+  network; scripted responses can be computed from earlier tool results (exactly what
+  a real model does). System tests cover generate → study the deck, API-failure UX
+  and unconfigured UX. In tests the queue adapter is :inline (the system-test app
+  server runs in a separate process, so the :test adapter's in-memory queue would
+  never see its enqueues).
 
 ## Frontend strategy
 

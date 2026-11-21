@@ -1,0 +1,74 @@
+<div class="page-header">
+  <h1>AI deck generation</h1>
+  <span class="deck-meta">
+    <%= @generation.status %> · <%= @generation.model %>
+    <% if @generation.turn_count.positive? %>
+      · turn <%= @generation.turn_count %>
+    <% end %>
+  </span>
+</div>
+
+<div class="card">
+  <div class="deck-stats">
+    <div><strong><%= @generation.journal.count { |e| e["type"] == "tool" } %></strong> tool calls</div>
+    <% if @generation.deck %>
+      <div><strong><%= @generation.deck.notes.count %></strong> notes</div>
+    <% end %>
+  </div>
+</div>
+
+<p class="deck-description"><strong>Prompt:</strong> <%= @generation.prompt %></p>
+
+<% if @generation.running? || @generation.pending? %>
+  <p class="muted" data-generation-status="<%= @generation.status %>">
+    The AI agent is working… this page refreshes every couple of seconds.
+  </p>
+<% end %>
+
+<% if @generation.failed? %>
+  <p class="flash flash--alert">
+    Generation failed: <%= @generation.error %>
+  </p>
+<% end %>
+
+<div class="card transcript">
+  <% @generation.journal.each_with_index do |entry, i| %>
+    <% case entry["type"] when "assistant" %>
+      <div class="transcript-entry transcript-entry--assistant">
+        <span class="transcript-role">assistant</span>
+        <% if entry["text"].present? %>
+          <div><%= entry["text"] %></div>
+        <% end %>
+        <% if entry["tool_calls"] %>
+          <div class="muted">→ <%= entry["tool_calls"].join(", ") %></div>
+        <% end %>
+      </div>
+    <% when "tool" %>
+      <div class="transcript-entry transcript-entry--tool <%= entry["error"] ? "transcript-entry--error" : "" %>">
+        <span class="transcript-role"><%= entry["name"] %></span>
+        <pre><%= JSON.pretty_generate(entry["result"]) %></pre>
+      </div>
+    <% else %>
+      <div class="transcript-entry transcript-entry--status">
+        <span class="muted">· <%= [ entry["text"], entry["summary"], entry["deck"], entry["error"] ].compact.join(" — ") %></span>
+      </div>
+    <% end %>
+  <% end %>
+</div>
+
+<div class="actions">
+  <% if @generation.deck %>
+    <%= link_to "Open deck", deck_path(@generation.deck), class: "btn" %>
+  <% end %>
+  <%= link_to "Back to decks", decks_path, class: "btn btn--secondary" %>
+</div>
+
+<%# Poll while the agent runs: a plain Turbo replace-visit, no frameworks. %>
+<% if @generation.pending? || @generation.running? %>
+  <script>
+    setTimeout(() => {
+      if (window.Turbo) { Turbo.visit(window.location.href, { action: "replace" }) }
+      else { window.location.reload() }
+    }, 2000)
+  </script>
+<% end %>

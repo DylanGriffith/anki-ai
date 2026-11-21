@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_21_182000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_21_200000) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.string "name", null: false
     t.string "record_type", null: false
@@ -37,6 +37,32 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_182000) do
     t.bigint "blob_id", null: false
     t.string "variation_digest", null: false
     t.index ["blob_id", "variation_digest"], name: "index_active_storage_variant_records_uniqueness", unique: true
+  end
+
+  create_table "ai_generations", force: :cascade do |t|
+    t.integer "user_id", null: false
+    t.integer "deck_id"
+    t.integer "status", default: 0, null: false
+    t.string "model", null: false
+    t.text "prompt", null: false
+    t.text "transcript", default: "[]", null: false
+    t.text "error"
+    t.integer "turn_count", default: 0, null: false
+    t.datetime "finished_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["deck_id"], name: "index_ai_generations_on_deck_id"
+    t.index ["status"], name: "index_ai_generations_on_status"
+    t.index ["user_id"], name: "index_ai_generations_on_user_id"
+  end
+
+  create_table "ai_settings", force: :cascade do |t|
+    t.string "base_url", null: false
+    t.text "api_key_ciphertext"
+    t.text "models_json"
+    t.datetime "models_fetched_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
   end
 
   create_table "card_states", force: :cascade do |t|
@@ -167,6 +193,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_182000) do
 
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
+  add_foreign_key "ai_generations", "decks"
+  add_foreign_key "ai_generations", "users"
   add_foreign_key "card_states", "cards"
   add_foreign_key "card_states", "users"
   add_foreign_key "cards", "decks"

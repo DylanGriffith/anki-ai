@@ -28,6 +28,12 @@ Rails.application.configure do
   # Disable request forgery protection in test environment.
   config.action_controller.allow_forgery_protection = false
 
+  # Jobs run inline in tests: system tests run the app in a separate process
+  # from the test case, so the :test adapter's in-memory queue would never
+  # see enqueues made by the server. Inline keeps the DB effects visible to
+  # both (they share the test transaction).
+  config.active_job.queue_adapter = :inline
+
   # Store uploaded files on the local file system in a temporary directory.
   config.active_storage.service = :test
 

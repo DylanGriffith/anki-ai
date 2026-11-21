@@ -164,3 +164,11 @@ label.inline { display: inline; margin: 0; font-weight: 400; }
 .typed--correct { color: #1e7d32; }
 .cloze { font-weight: 700; }
 .hint summary { color: var(--accent); cursor: pointer; }
+
+/* AI generation transcript (step 6) */
+.transcript { display: flex; flex-direction: column; gap: 8px; max-height: 26rem; overflow-y: auto; }
+.transcript-entry { border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; }
+.transcript-entry--assistant { background: #f6f8fa; }
+.transcript-entry--tool pre { margin: 4px 0 0; white-space: pre-wrap; font-size: 0.8rem; }
+.transcript-entry--error { border-color: var(--danger); }
+.transcript-role { display: block; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-bottom: 2px; }

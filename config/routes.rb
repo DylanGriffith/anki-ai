@@ -15,6 +15,11 @@ Rails.application.routes.draw do
   # Offline sync: idempotent batch of client-generated review ops.
   post "sync", to: "sync#create"
 
+  # AI deck generation: the form enqueues a job; the status page polls.
+  namespace :ai do
+    resources :generations, only: [ :new, :create, :show ]
+  end
+
   resources :decks, only: [ :index, :new, :create, :show, :destroy ] do
     member do
       get "media/:filename", to: "decks/media#show", as: :media, constraints: { filename: %r{[^/]+} }

@@ -4,6 +4,7 @@ class DecksController < ApplicationController
 
   def index
     @decks = current_user.decks.order(:name)
+    @ai_configured = Ai::Setting.current.configured?
     @due_counts = CardState.joins(:card)
                            .where(user: current_user, state: [ :learning, :relearning, :review ])
                            .where("card_states.due <= ?", Time.now.utc)

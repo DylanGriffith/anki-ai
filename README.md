@@ -32,11 +32,15 @@ bin/dev                  # or: bin/rails server + bin/jobs (Solid Queue worker)
 
 ```bash
 bin/rails "ai:config[base_url=https://api.openai.com/v1,api_key=sk-...]"
-bin/rails ai:refresh_models   # fetch + cache the model list for the UI dropdown
+bin/rails ai:models   # fetch + cache the model list for the UI dropdown
 ```
 
-The base URL and API key are stored in the database (key encrypted at rest). Any
-OpenAI-compatible server works.
+The base URL and API key are stored in the database (key encrypted at rest with a key
+derived from the app's `secret_key_base` — keep the same secret if you restore a
+database backup, or the stored key becomes unreadable). Any OpenAI-compatible server
+works: OpenAI, OpenRouter, LM Studio, Ollama's compatibility layer, …
+AI deck generation runs as a Solid Queue job — run the worker with
+`SOLID_QUEUE_IN_PUMA=true bin/rails server` (single process) or `bin/jobs`.
 
 ## Test suite
 
@@ -106,12 +110,21 @@ and a check-in for approval before the next step.
       unit tests (content, progress, media, double round-trip stability) + system
       test (download → inspect archive → re-import through the UI). Screenshots:
       `step5_export_button`, `step5_reimported`.
-- [ ] **Step 6 — AI deck generation.** `rake ai:config` (DB-stored, encrypted key) and
+- [x] **Step 6 — AI deck generation.** `rake ai:config` (DB-stored, encrypted key) and
       model list fetch. "New AI Deck" button → description + model select → background
       job (Solid Queue) runs an agent loop against the OpenAI-compatible API with tools
       (create deck, define note type, add/update/delete/list notes, finish). Live
       transcript/status page. Fully isolated in an `Ai::` namespace; tested against a
       scripted fake OpenAI server (no real API in tests). System test + screenshots.
+      Done: `Ai::Client` (hand-written Net::HTTP chat/models client), `Ai::Agent::DeckBuilder`
+      (bounded agent loop with 7 tools, tool errors are recoverable results, transcript
+      journaled per step), `Ai::GenerationJob` (Solid Queue; idempotent re-runs), models
+      dropdown cached in `ai_settings` with live refresh + fallback. The fake server
+      (`test/support/fake_openai_server.rb`) is a real local HTTP server (Puma) serving
+      scripted responses — the agent's real HTTP path is exercised. System test covers
+      generate → study the deck, API failure UX, and unconfigured UX. Screenshots:
+      `step6_new_ai_deck_button`, `step6_ai_form`, `step6_ai_done`, `step6_generated_deck`,
+      `step6_generated_deck_study`, `step6_ai_failed`.
 - [ ] **Step 7 — Public decks & polish.** Public/private visibility; browse public
       decks; study someone else's public deck with **your own separate progress**
       (progress rows are per-user from day one, this step exposes the UI). Final E2E

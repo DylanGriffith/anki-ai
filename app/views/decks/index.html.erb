@@ -1,6 +1,9 @@
 <div class="page-header">
   <h1>Decks</h1>
   <%= link_to "Import .apkg", import_decks_form_path, class: "btn btn--secondary" %>
+  <% if @ai_configured %>
+    <%= link_to "New AI deck", new_ai_generation_path, class: "btn btn--secondary" %>
+  <% end %>
   <%= link_to "New deck", new_deck_path, class: "btn" %>
 </div>
 
