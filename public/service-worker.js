@@ -111,6 +111,10 @@ async function cachePage(request, response) {
   // Never cache a redirect: session-expired navigations land on /login and
   // would otherwise be replayed for the study URL offline.
   if (new URL(response.url).pathname !== new URL(request.url).pathname) return
+  // Only real pages belong in the page cache — downloads (the .apkg export
+  // also fetches with Accept: text/html) must not displace cached pages.
+  const type = response.headers.get("content-type") || ""
+  if (!type.toLowerCase().includes("text/html")) return
   const user = response.headers.get("X-Anki-User-Id") || "anon"
   const cache = await caches.open(PAGE_PREFIX + user)
   await cache.put(request, response.clone())

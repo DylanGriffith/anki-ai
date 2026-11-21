@@ -90,11 +90,22 @@ and a check-in for approval before the next step.
       a service-worker test hook (CDP emulation doesn't reach SW-context fetches),
       review offline, offline navigation, reconnect, idempotent replay. Screenshots
       (incl. offline state).
-- [ ] **Step 5 — `.apkg` export.** Hand-written writer: builds a schema-11
+- [x] **Step 5 — `.apkg` export.** Hand-written writer: builds a schema-11
       `collection.anki2` in a temp SQLite DB with the requesting user's progress mapped
       back to Anki's SM-2 columns + revlog, zips with media, streams the download.
       Import → export → re-import round-trip unit test. System test with a real Anki
       importable artifact. Screenshots.
+      Done: `lib/anki/apkg/schema11_writer.rb` (full schema-11 tables/indexes, csum via
+      crc32, JSON media manifest) + `Decks::Export` (inverse of Import's SM-2↔FSRS
+      mappings: difficulty↔factor, due day numbers from the deck's `crt`, learning
+      steps as epoch-seconds dues, revlog ids from review timestamps with same-ms
+      collision guard; subdecks rebuilt from `anki_subdeck` names under the deck's
+      current name, stable across renames/round-trips; in-app-created objects get ids
+      in Anki's real id spaces, imported ones keep their original ids). Streaming
+      download with tempfile cleanup; the export button on the deck page. Round-trip
+      unit tests (content, progress, media, double round-trip stability) + system
+      test (download → inspect archive → re-import through the UI). Screenshots:
+      `step5_export_button`, `step5_reimported`.
 - [ ] **Step 6 — AI deck generation.** `rake ai:config` (DB-stored, encrypted key) and
       model list fetch. "New AI Deck" button → description + model select → background
       job (Solid Queue) runs an agent loop against the OpenAI-compatible API with tools

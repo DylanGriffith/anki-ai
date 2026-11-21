@@ -108,12 +108,20 @@ mean rendering HTML authored by other users. `[sound:...]` tags are rewritten to
 `<audio>` elements pointing at our media route; `<img src="…">` is rewritten to the
 per-deck media route.
 
-**Writer** (`Anki::Apkg::Writer`): export = build a schema-11 `collection.anki2` in a
-temp SQLite DB (notes with guids, cards with the requesting user's progress mapped
-FSRS→SM-2 columns: due/ivl/factor/type/queue, revlog with ease 1-4), `zip` it with media
-members + `media` manifest, stream via `send_file`, cleanup. Schema 11 is importable by
-every Anki in circulation. The guids make export → Anki → re-import idempotent-ish,
-and our own round-trip (import → export → import) is a unit test.
+**Writer** (`Anki::Apkg::Schema11Writer` + `Decks::Export`): export = build a schema-11
+`collection.anki2` in a temp SQLite DB (notes with guids, cards with the requesting
+user's progress mapped FSRS→SM-2 columns — the exact inverse of Import's mappings: due
+day numbers are counted from the deck's `crt`, learning dues are epoch seconds, `left`
+reconstructs learning steps, difficulty maps back to an ease factor — plus revlog with
+ease 1-4), `zip -j` it with numbered media members + JSON `media` manifest, stream the
+download, delete the tempfile. Subdecks are rebuilt from the cards' `anki_subdeck`
+names (first `::` component dropped, so they nest under the deck's current name and
+survive renames and repeated round-trips). In-app-created objects get generated ids in
+Anki's real id spaces; imported ones keep their original Anki ids, so round-trips are
+stable. Schema 11 is importable by every Anki in circulation. The guids make
+export → Anki → re-import idempotent-ish, and our own round-trip
+(import → export → import) is a unit test plus a system test (download via the UI,
+inspect the archive, re-import it).
 
 ## Scheduling — `Fsrs`
 

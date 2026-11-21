@@ -1,6 +1,6 @@
 class DecksController < ApplicationController
   before_action :require_login
-  before_action :set_deck, only: [ :show, :destroy ]
+  before_action :set_deck, only: [ :show, :destroy, :export ]
 
   def index
     @decks = current_user.decks.order(:name)
@@ -27,6 +27,18 @@ class DecksController < ApplicationController
   end
 
   def show
+  end
+
+  # Streams the deck as a schema-11 .apkg (Anki-importable, includes the
+  # current user's progress). The archive is built into a tempfile which the
+  # streaming body deletes once it has been sent.
+  def export
+    path = Decks::Export.call(user: current_user, deck: @deck)
+    response.headers["Content-Disposition"] =
+      %(attachment; filename="#{@deck.name.gsub(/["\\\/]/, "")}.apkg")
+    response.headers["Content-Type"] = "application/octet-stream"
+    response.headers["Content-Length"] = File.size(path).to_s
+    self.response_body = ExportBody.new(path)
   end
 
   def destroy
@@ -67,5 +79,25 @@ class DecksController < ApplicationController
 
   def deck_params
     params.require(:deck).permit(:name, :description, :visibility, :new_per_day, :reviews_per_day)
+  end
+
+  # Streams the generated .apkg in chunks and deletes the tempfile once the
+  # response has been fully sent (Rack calls #close on the body).
+  class ExportBody
+    CHUNK = 64.kilobytes
+
+    def initialize(path)
+      @path = path
+    end
+
+    def each
+      File.open(@path, "rb") do |file|
+        while (chunk = file.read(CHUNK))
+          yield chunk
+        end
+      end
+    ensure
+      File.delete(@path) if File.exist?(@path)
+    end
   end
 end

@@ -38,8 +38,10 @@ class LoginDecksTest < ApplicationSystemTestCase
     assert_selector ".deck-list li", text: "Japanese Vocabulary"
     evidence("step1_deck_list")
 
-    # One click on the deck name starts studying (no intermediate page)
-    find(".deck-name", text: "Japanese Vocabulary").click
+    # One click on the deck name starts studying (no intermediate page).
+    # JS click: native Selenium clicks are sometimes dropped wholesale by
+    # headless Chrome (see ApplicationSystemTestCase#click_on).
+    find(".deck-name", text: "Japanese Vocabulary").execute_script("this.click()")
     assert_selector "h1", text: "Japanese Vocabulary"
     assert_text "Nothing left to study" # new empty deck
     evidence("study_one_click")

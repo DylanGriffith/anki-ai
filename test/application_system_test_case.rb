@@ -15,11 +15,20 @@ Capybara.register_driver :headless_chrome_e2e do |app|
   options.add_argument("--disable-backgrounding-occluded-windows")
   options.add_argument("--disable-renderer-backgrounding")
   options.add_argument("--disable-features=Translate,BackForwardCache")
+  # Export downloads land in tmp/downloads (cleared per test by the export
+  # system test) instead of Chrome's profile default.
+  FileUtils.mkdir_p(ApplicationSystemTestCase::EXPORT_DOWNLOAD_DIR)
+  options.add_preference("download.default_directory", ApplicationSystemTestCase::EXPORT_DOWNLOAD_DIR.to_s)
+  options.add_preference("download.prompt_for_download", false)
+  options.add_preference("download.directory_upgrade", true)
   Capybara::Selenium::Driver.new(app, browser: :chrome, options: options)
 end
 
 class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
   driven_by :headless_chrome_e2e
+
+  # Where headless Chrome writes UI downloads (export .apkg files).
+  EXPORT_DOWNLOAD_DIR = Rails.root.join("tmp", "downloads")
 
   # Offline study keeps state in the browser (service worker, its caches and
   # the IndexedDB outbox) that Capybara's reset does not touch, and test

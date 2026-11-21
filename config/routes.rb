@@ -22,6 +22,7 @@ Rails.application.routes.draw do
       get "cards", to: "decks/cards#index", as: :cards
       get "cards/new", to: "decks/cards#new", as: :new_card
       post "cards", to: "decks/cards#create", as: :create_card
+      get "export", to: "decks#export", as: :export
     end
   end
 end
