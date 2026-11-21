@@ -8,6 +8,6 @@
 class RemoveGuidUniquenessOnNotes < ActiveRecord::Migration[8.1]
   def change
     remove_index :notes, name: "index_notes_on_deck_id_and_guid"
-    add_index :notes, [:deck_id, :guid]
+    add_index :notes, [ :deck_id, :guid ]
   end
 end

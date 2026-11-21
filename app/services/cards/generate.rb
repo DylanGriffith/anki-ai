@@ -35,10 +35,10 @@ module Cards
       note_type.card_requirements.filter_map do |(ord, kind, fields)|
         present = fields.map { |f| values[f].to_s.strip.present? }
         satisfied = case kind
-                    when "all" then present.all?
-                    when "none" then true
-                    else present.any?
-                    end
+        when "all" then present.all?
+        when "none" then true
+        else present.any?
+        end
         ord if satisfied
       end
     end

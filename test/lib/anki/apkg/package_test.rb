@@ -63,7 +63,7 @@ class Anki::Apkg::PackageTest < ActiveSupport::TestCase
 
         # The collection is readable without extracting any media.
         assert_equal({ notes: 2, cards: 2, revlog: 1 }, pkg.collection.counts)
-        assert_equal({ }, pkg.media_manifest) # manifest not extracted yet
+        assert_equal({}, pkg.media_manifest) # manifest not extracted yet
         assert_nil pkg.media_member(0)
 
         pkg.extract_media!

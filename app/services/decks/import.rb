@@ -197,12 +197,12 @@ module Decks
 
         queue = c["queue"]
         state = case queue
-                when -2, -3, -4 then map_type(c["type"])
-                when 0 then :new
-                when 1, 3 then :learning
-                when 2 then :review
-                else map_type(c["type"])
-                end
+        when -2, -3, -4 then map_type(c["type"])
+        when 0 then :new
+        when 1, 3 then :learning
+        when 2 then :review
+        else map_type(c["type"])
+        end
 
         {
           user_id: @user.id,

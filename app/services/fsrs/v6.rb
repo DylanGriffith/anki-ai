@@ -244,9 +244,9 @@ module Fsrs
     def next_stability(difficulty, stability, retrievability, rating)
       s = if rating == 1
             forget_stability(difficulty, stability, retrievability)
-          else
+      else
             recall_stability(difficulty, stability, retrievability, rating)
-          end
+      end
       clamp_stability(s)
     end
 
