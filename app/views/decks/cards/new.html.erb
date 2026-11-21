@@ -1,0 +1,32 @@
+<h1>Add card to <%= @deck.name %></h1>
+
+<% if params[:note_type_id].blank? && @note_types.size > 1 %>
+  <%# Step 1: choose the note type %>
+  <%= form_with url: new_card_deck_path(@deck), method: :get, local: true, class: "card card--narrow" do %>
+    <%= label_tag :note_type_id, "Note type" %>
+    <%= select_tag :note_type_id, options_from_collection_for_select(@note_types, :id, :name) %>
+    <%= submit_tag "Continue" %>
+  <% end %>
+<% else %>
+  <%# Step 2: fill the fields %>
+  <%= form_with url: create_card_deck_path(@deck), method: :post, data: { turbo: false }, class: "card" do %>
+    <%= hidden_field_tag :note_type_id, @note_type.id %>
+    <p class="muted">Note type: <%= @note_type.name %> (<%= @note_type.field_names.join(", ") %>)</p>
+
+    <% @note_type.field_names.each_with_index do |name, i| %>
+      <%= label_tag "fields_#{name.parameterize}", name %>
+      <%= text_area_tag "fields[#{name}]", @note.fields[i], rows: 3, required: i.zero? %>
+    <% end %>
+
+    <%= label_tag :tags, "Tags (space separated)" %>
+    <%= text_field_tag :tags, params[:tags] %>
+
+    <div class="checkbox-row">
+      <%= check_box_tag :add_to_next, "1", params[:add_to_next] == "1" %>
+      <%= label_tag :add_to_next, "Add to next (review this card first, instead of appending)", class: "inline" %>
+    </div>
+
+    <%= submit_tag "Add card" %>
+    <%= link_to "Cancel", deck_path(@deck), class: "btn btn--secondary" %>
+  <% end %>
+<% end %>

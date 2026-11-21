@@ -28,7 +28,7 @@ class CardHtml
 
     source = side == :question ? template["front"] : template["back"]
     raw = Anki::Template.render(source, side: side, fields: fields, context: context)
-    rewrite_media(sanitize(raw), media_url)
+    rewrite_media(sanitize(raw), media_url).html_safe
   end
 
   # Note-type CSS, lightly scrubbed (CSS cannot execute scripts; this just
@@ -47,9 +47,10 @@ class CardHtml
   end
 
   def self.rewrite_media(html, media_url)
-    # [sound:file.mp3] -> audio element on this deck's media route
+    # [sound:file.mp3] -> audio element on this deck's media route (autoplay
+    # attempts like Anki; browsers may refuse without a gesture).
     html = html.gsub(/\[sound:([^\]\[]+)\]/) do
-      %(<audio controls preload="auto" src="#{url_attr(media_url, Regexp.last_match(1))}"></audio>)
+      %(<audio controls data-autoplay preload="auto" src="#{url_attr(media_url, Regexp.last_match(1))}"></audio>)
     end
     # <img src="relative.png"> -> deck media route (absolute/remote URLs untouched)
     html = html.gsub(/(<img\b[^>]*\bsrc=")(?!https?:|data:|\/)([^"]*)(")/i) do

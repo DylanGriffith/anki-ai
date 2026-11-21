@@ -1,6 +1,6 @@
 <h1>New deck</h1>
 
-<%= form_with model: @deck, local: true, class: "card card--narrow" do |f| %>
+<%= form_with model: @deck, data: { turbo: false }, class: "card card--narrow" do |f| %>
   <% if @deck.errors.any? %>
     <div class="flash flash--alert">
       <%= @deck.errors.full_messages.to_sentence %>

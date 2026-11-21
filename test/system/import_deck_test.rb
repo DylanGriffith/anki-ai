@@ -17,16 +17,13 @@ class ImportDeckTest < ApplicationSystemTestCase
       .add_media("word.mp3", "fake-mp3-bytes-0123456789")
 
     with_apkg(apkg, "ui-import") do |path|
-      visit login_path
-      fill_in "Username", with: "dylan"
-      fill_in "Password", with: "password123"
-      click_on "Sign in"
+      sign_in_as("dylan", "password123")
 
       click_on "Import .apkg"
       evidence("step2_import_form")
 
       attach_file "file", path
-      click_on "Import"
+      click_submit("Import")
 
       assert_selector "h1", text: "Test French"
       assert_text "2 cards"
@@ -44,13 +41,10 @@ class ImportDeckTest < ApplicationSystemTestCase
     bad.write("this is not a zip file")
     bad.flush
 
-    visit login_path
-    fill_in "Username", with: "dylan"
-    fill_in "Password", with: "password123"
-    click_on "Sign in"
+    sign_in_as("dylan", "password123")
     click_on "Import .apkg"
     attach_file "file", bad.path
-    click_on "Import"
+    click_submit("Import")
 
     assert_selector "h1", text: "Import Anki deck"
     assert_text(/Import failed/i)

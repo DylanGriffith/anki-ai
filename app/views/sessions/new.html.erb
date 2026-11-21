@@ -1,6 +1,6 @@
 <h1>Sign in</h1>
 
-<%= form_with url: login_path, method: :post, local: true, class: "card card--narrow" do |f| %>
+<%= form_with url: login_path, method: :post, data: { turbo: false }, class: "card card--narrow" do |f| %>
   <%= f.label :name, "Username" %>
   <%= f.text_field :name, value: params[:name], autofocus: true, autocomplete: "username", required: true %>
 

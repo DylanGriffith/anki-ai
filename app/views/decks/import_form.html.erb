@@ -1,6 +1,6 @@
 <h1>Import Anki deck</h1>
 
-<%= form_with url: import_decks_path, multipart: true, local: true, class: "card card--narrow" do %>
+<%= form_with url: import_decks_path, multipart: true, data: { turbo: false }, class: "card card--narrow" do %>
   <%= label_tag :file, ".apkg file" %>
   <%= file_field_tag :file, accept: ".apkg,.colpkg", required: true %>
 

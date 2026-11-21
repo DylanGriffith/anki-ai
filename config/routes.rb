@@ -15,6 +15,12 @@ Rails.application.routes.draw do
   resources :decks, only: [ :index, :new, :create, :show, :destroy ] do
     member do
       get "media/:filename", to: "decks/media#show", as: :media, constraints: { filename: %r{[^/]+} }
+      get "study", to: "decks/study#show", as: :study
+      post "study/reveal", to: "decks/study#reveal", as: :study_reveal
+      post "study/answer", to: "decks/study#answer", as: :study_answer
+      get "cards", to: "decks/cards#index", as: :cards
+      get "cards/new", to: "decks/cards#new", as: :new_card
+      post "cards", to: "decks/cards#create", as: :create_card
     end
   end
 end

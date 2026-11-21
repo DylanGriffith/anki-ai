@@ -19,7 +19,7 @@
       <span class="spacer"></span>
       <% if current_user %>
         <span class="who"><%= current_user.name %></span>
-        <%= button_to "Sign out", logout_path, method: :delete, class: "linklike" %>
+        <%= button_to "Sign out", logout_path, method: :delete, class: "linklike", form: { data: { turbo: false } } %>
       <% end %>
     </nav>
 

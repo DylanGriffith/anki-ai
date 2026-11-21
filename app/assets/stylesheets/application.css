@@ -116,3 +116,20 @@ button.linklike {
 .study-answer .btn { flex: 1; min-width: 90px; text-align: center; }
 
 audio { width: 100%; margin-top: 12px; }
+
+/* Study (step 3) */
+.anki-card { overflow-wrap: break-word; }
+.answer-divider { margin: 20px 0; border: none; border-top: 1px solid var(--border); }
+.study-answer .btn small { display: block; font-size: 0.75rem; opacity: 0.85; }
+.btn--easy { background: #1e7d32; border-color: #1e7d32; }
+.due-count { color: var(--accent); }
+.badge { background: #f0f0f0; border-radius: 4px; padding: 2px 6px; font-size: 0.75rem; color: var(--muted); }
+.card-summary { flex: 1; }
+.checkbox-row { display: flex; align-items: center; gap: 8px; margin: 16px 0; }
+.checkbox-row input[type="checkbox"] { width: auto; }
+label.inline { display: inline; margin: 0; font-weight: 400; }
+.typed--ok { color: #1e7d32; }
+.typed--bad { color: var(--danger); text-decoration: line-through; }
+.typed--correct { color: #1e7d32; }
+.cloze { font-weight: 700; }
+.hint summary { color: var(--accent); cursor: pointer; }

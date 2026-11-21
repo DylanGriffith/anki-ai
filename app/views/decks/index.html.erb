@@ -10,9 +10,19 @@
       <li>
         <%= link_to deck.name, deck, class: "deck-name" %>
         <span class="deck-meta"><%= deck.is_public? ? "public" : "private" %></span>
+        <span class="deck-meta">
+          <% due = @due_counts[deck.id].to_i %>
+          <% new_left = [ @new_counts[deck.id].to_i, deck.new_per_day ].min %>
+          <% if due.positive? %>
+            <strong class="due-count"><%= due %> due</strong>
+          <% end %>
+          <% if new_left.positive? && deck.cards.exists? %>
+            <%= new_left %> new
+          <% end %>
+        </span>
       </li>
     <% end %>
   </ul>
 <% else %>
-  <p class="empty">No decks yet. Create one, or import an Anki deck (<code>.apkg</code>) once import lands.</p>
+  <p class="empty">No decks yet. Create one, or import an Anki deck (<code>.apkg</code>).</p>
 <% end %>

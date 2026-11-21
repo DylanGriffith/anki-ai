@@ -165,7 +165,7 @@ class Decks::ImportTest < ActiveSupport::TestCase
     assert_equal "hello", question
 
     answer = CardHtml.render(card, side: :answer, front_side: "hello", media_url: media_url)
-    assert_match %r{^hello<hr>bonjour<audio controls preload="auto" src="/decks/#{deck.id}/media/word\.mp3"></audio>$}i, answer
+    assert_match %r{^hello<hr>bonjour<audio controls[^>]*src="/decks/#{deck.id}/media/word\.mp3"></audio>$}i, answer
   end
 
   test "sanitizes dangerous field HTML" do

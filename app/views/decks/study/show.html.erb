@@ -1,0 +1,34 @@
+<div class="page-header">
+  <h1><%= @deck.name %></h1>
+  <span class="deck-meta"><%= pluralize(@counts[:due_now], "due") %> · <%= pluralize(@counts[:new_remaining], "new") %></span>
+  <%= link_to "Done", deck_path(@deck), class: "btn btn--secondary" %>
+</div>
+
+<% if @cards.any? %>
+  <%= form_with url: study_reveal_deck_path(@deck), method: :post,
+        data: { controller: "study", study_show_answer_value: "1", turbo: false } do %>
+    <%= hidden_field_tag :card_id, @card.id %>
+    <div class="study-card anki-card">
+      <style><%= CardHtml.css(@note_type) %></style>
+      <%= @question_html %>
+    </div>
+    <div class="actions">
+      <%= submit_tag "Show Answer", class: "btn", data: { study_target: "showAnswer" } %>
+    </div>
+  <% end %>
+<% elsif @counts[:next_due_at] %>
+  <div class="card">
+    <p><strong>No cards ready right now.</strong></p>
+    <p class="muted">Next card is due <%= distance_of_time_in_words_to_now(@counts[:next_due_at]) %> from now.</p>
+    <p class="muted">Today: <%= @counts[:reviews_done_today] %> reviews, <%= @counts[:new_done_today] %> new cards.</p>
+    <%= link_to "Check again", study_deck_path(@deck), class: "btn btn--secondary" %>
+  </div>
+<% else %>
+  <div class="card">
+    <p><strong>Congratulations!</strong> Nothing left to study in this deck.</p>
+    <p class="muted">
+      Today: <%= @counts[:reviews_done_today] %> reviews, <%= @counts[:new_done_today] %> new cards.
+    </p>
+    <%= link_to "Back to deck", deck_path(@deck), class: "btn btn--secondary" %>
+  </div>
+<% end %>

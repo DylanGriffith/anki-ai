@@ -59,20 +59,22 @@ and a check-in for approval before the next step.
 
 - [x] **Step 0 — Plan & architecture.** This README plan + `ARCHITECTURE.md`. No code.
       *(awaiting plan approval)*
-- [ ] **Step 1 — Foundation.** Trim dependencies to the approved set. Core schema
+- [x] **Step 1 — Foundation.** Trim dependencies to the approved set. Core schema
       (users, decks, note types, notes, cards, media files). Username/password login
       (bcrypt, session cookie), `user:create` rake task. Minimal app shell: deck list,
       new deck, login screen. System test for login + deck creation; screenshots.
-- [ ] **Step 2 — Anki `.apkg` import.** Hand-written reader (`lib/anki`): unzip, read
+- [x] **Step 2 — Anki `.apkg` import.** Hand-written reader (`lib/anki`): unzip, read
       schema-11 collection (models/decks/notes/cards/revlog/media manifest), import with
       progress, stream media to storage. Hand-written Anki template renderer
       (`{{Field}}`, conditionals, cloze, hints, type-in-answer). Media serving controller
       with correct content types + HTTP Range for audio. Import UI (file upload).
       Unit tests against both real fixtures + synthetic edge-case fixtures.
       Screenshots of imported decks.
-- [ ] **Step 3 — Study flow + FSRS.** Hand-written FSRS scheduler (new/learning/review/
-      relearning queues, daily limits). Study session page (server-rendered, minimal JS),
-      answer buttons (Again/Hard/Good/Easy), audio autoplay, card templates rendered.
+- [x] **Step 3 — Study flow + FSRS.** Hand-written FSRS scheduler — **FSRS-6** (see
+      ARCHITECTURE.md decision 5): new/learning/review/relearning queues, same-day
+      short-term stability, interval fuzz, daily limits. Study session page
+      (server-rendered, minimal JS), answer buttons (Again/Hard/Good/Easy), audio
+      autoplay, card templates rendered.
       Add-card form with **"add to next"** checkbox (jumps the queue instead of
       appending). Unit tests for FSRS + system tests for a full study session.
       Screenshots.

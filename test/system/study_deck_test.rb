@@ -1,0 +1,116 @@
+require "application_system_test_case"
+
+class StudyDeckTest < ApplicationSystemTestCase
+  def build_study_apkg
+    AnkiApkgBuilder.new
+      .add_model(id: 1600000000001, name: "Basic", fields: %w[Front Back Audio],
+                 templates: [ { name: "Card 1", front: "{{Front}}",
+                                back: "{{FrontSide}}<hr id=answer>{{Back}}{{Audio}}" } ])
+      .add_deck(id: 1650000000001, name: "Study Test", desc: "Small deck for E2E")
+      .add_note(id: 1600000000101, guid: "g1", mid: 1600000000001,
+                fields: [ "hello", "bonjour", "" ])
+      .add_note(id: 1600000000102, guid: "g2", mid: 1600000000001,
+                fields: [ "dog", "chien", "" ])
+      .add_note(id: 1600000000103, guid: "g3", mid: 1600000000001,
+                fields: [ "water", "l'eau", "[sound:water.mp3]" ])
+      .add_card(id: 1600000000201, nid: 1600000000101, did: 1650000000001, due: 1)
+      .add_card(id: 1600000000202, nid: 1600000000102, did: 1650000000001, due: 2)
+      .add_card(id: 1600000000203, nid: 1600000000103, did: 1650000000001, due: 3)
+      .add_media("water.mp3", "fake-mp3-water-bytes")
+  end
+
+  def login_and_import
+    User.create!(name: "student", password: "password123")
+    sign_in_as("student", "password123")
+
+    with_apkg(build_study_apkg, "study-e2e") do |path|
+      click_on "Import .apkg"
+      attach_file "file", path
+      click_submit("Import")
+    end
+    assert_selector "h1", text: "Study Test"
+    User.find_by!(name: "student").decks.find_by!(name: "Study Test")
+  end
+
+  test "full study session: reveal, rate, progress and audio" do
+    deck = login_and_import
+
+    # Deck page shows study stats
+    assert_text "0 due now"
+    assert_text "3 new left today"
+    click_on "Study"
+
+    # Card 1: question side, then reveal the answer
+    assert_text "hello"
+    assert_no_text "bonjour"
+    evidence("step3_study_question")
+
+    click_submit("Show Answer")
+    assert_text "hello"
+    assert_text "bonjour"
+    assert_selector "button[name='rating'][value='1']", text: /Again/
+    assert_selector "button[name='rating'][value='3']", text: /Good/
+    evidence("step3_study_answer")
+
+    # Rate Good: card moves to learning (10 min), next card shows
+    click_rating(3)
+    assert_text "dog"
+    assert_no_text "chien"
+
+    # Rate Easy: graduates immediately, next card has audio
+    click_submit("Show Answer")
+    click_rating(4)
+    assert_text "water"
+    click_submit("Show Answer")
+    assert_text "l'eau"
+    assert_selector "audio[data-autoplay][src*='water.mp3']", count: 1
+    evidence("step3_study_answer_audio")
+
+    # Finish the session: rating the last card Good leaves it in learning
+    # (due in ~10 minutes), so the study page shows its waiting state.
+    click_rating(3)
+    assert_text "No cards ready right now"
+    assert_text "3 reviews, 3 new cards"
+    evidence("step3_study_done")
+
+    # Reloading shows the same waiting state with today's counts
+    visit study_deck_path(deck)
+    assert_text "No cards ready right now"
+    assert_text "3 reviews, 3 new cards"
+  end
+
+  test "add card with add-to-next jumps the new-card queue" do
+    deck = login_and_import
+
+    # Add a normal card first (position after imported cards)
+    visit deck_path(deck)
+    click_on "Add card"
+    fill_in "fields[Front]", with: "normal card"
+    fill_in "fields[Back]", with: "appended"
+    click_submit("Add card")
+    assert_text "Card added"
+
+    # Add one with "add to next": should come FIRST in the new queue
+    visit new_card_deck_path(deck)
+    fill_in "fields[Front]", with: "urgent card"
+    fill_in "fields[Back]", with: "next up"
+    # Set via DOM: synthesized checkbox clicks suffer the same input-pipeline
+    # drops as submit clicks, and a silently unchecked box would append the
+    # card instead of jumping the queue. Nothing listens to this checkbox's
+    # events, so setting .checked is equivalent.
+    find("#add_to_next").execute_script("this.checked = true")
+    click_submit("Add card")
+    assert_text "urgent card", count: 1
+
+    # The browse list orders by position: urgent card first
+    visit cards_deck_path(deck)
+    first_li = first(".deck-list li").text
+    assert first_li.start_with?("urgent card"), "expected urgent card first, got: #{first_li}"
+    evidence("step3_add_to_next_browse")
+
+    # And it is the first new card in the study queue
+    visit study_deck_path(deck)
+    assert_text "urgent card"
+    evidence("step3_add_to_next_study")
+  end
+end

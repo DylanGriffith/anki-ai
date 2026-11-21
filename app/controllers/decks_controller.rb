@@ -4,6 +4,13 @@ class DecksController < ApplicationController
 
   def index
     @decks = current_user.decks.order(:name)
+    @due_counts = CardState.joins(:card)
+                           .where(user: current_user, state: [ :learning, :relearning, :review ])
+                           .where("card_states.due <= ?", Time.now.utc)
+                           .group("cards.deck_id").count
+    introduced = CardState.where(user: current_user).where.not(state: :new).select(:card_id)
+    @new_counts = Card.where(deck: @decks, suspended: false)
+                       .where.not(id: introduced).group(:deck_id).count
   end
 
   def new

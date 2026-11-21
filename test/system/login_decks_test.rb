@@ -30,7 +30,7 @@ class LoginDecksTest < ApplicationSystemTestCase
     click_on "Create deck"
     assert_selector "h1", text: "Japanese Vocabulary"
     assert_text "private"
-    assert_text "Daily limits: 20 new, 200 reviews."
+    assert_text "Daily limits: 20 new, 200 reviews"
     evidence("step1_deck_created")
 
     # Deck shows in the list

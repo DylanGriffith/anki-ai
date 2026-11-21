@@ -7,28 +7,42 @@
   <p class="deck-description"><%= @deck.description %></p>
 <% end %>
 
+<div class="card">
+  <div class="deck-stats">
+    <div><strong><%= @deck.cards.count %></strong> cards</div>
+    <div><strong><%= @deck.notes.count %></strong> notes</div>
+    <div><strong><%= @deck.note_types.count %></strong> note types</div>
+    <div><strong><%= @deck.media_files.count %></strong> media files</div>
+    <% subdecks = @deck.cards.distinct.pluck(:anki_subdeck).reject(&:blank?) %>
+    <% if subdecks.any? %>
+      <div><strong><%= subdecks.count %></strong> subdecks</div>
+    <% end %>
+    <div class="muted">Daily limits: <%= @deck.new_per_day %> new, <%= @deck.reviews_per_day %> reviews</div>
+  </div>
+</div>
+
 <% if @deck.cards.any? %>
+  <% queue = Reviewing::QueueBuilder.call(user: current_user, deck: @deck) %>
   <div class="card">
     <div class="deck-stats">
-      <div><strong><%= @deck.cards.count %></strong> cards</div>
-      <div><strong><%= @deck.notes.count %></strong> notes</div>
-      <div><strong><%= @deck.note_types.count %></strong> note types</div>
-      <div><strong><%= @deck.media_files.count %></strong> media files</div>
-      <% subdecks = @deck.cards.distinct.pluck(:anki_subdeck).reject(&:blank?) %>
-      <% if subdecks.any? %>
-        <div><strong><%= subdecks.count %></strong> subdecks</div>
-      <% end %>
+      <div><strong><%= queue[:counts][:due_now] %></strong> due now</div>
+      <div><strong><%= queue[:counts][:new_remaining] %></strong> new left today</div>
+    </div>
+    <div class="actions">
+      <%= link_to "Study", study_deck_path(@deck), class: "btn" %>
     </div>
   </div>
-  <p class="muted">Studying arrives in the next step.</p>
 <% else %>
   <div class="card">
-    <p>Cards arrive by importing an Anki deck or creating them here (next steps).</p>
-    <p class="muted">Daily limits: <%= @deck.new_per_day %> new, <%= @deck.reviews_per_day %> reviews.</p>
+    <p>This deck has no cards yet.</p>
   </div>
 <% end %>
 
 <div class="actions">
+  <% if @deck.editable_by?(current_user) %>
+    <%= link_to "Add card", new_card_deck_path(@deck), class: "btn btn--secondary" %>
+  <% end %>
+  <%= link_to "Browse cards", cards_deck_path(@deck), class: "btn btn--secondary" %>
   <%= button_to "Delete deck", deck_path(@deck), method: :delete, class: "btn btn--danger",
         data: { turbo_confirm: "Delete this deck and all its cards?" } %>
   <%= link_to "Back", decks_path, class: "btn btn--secondary" %>
