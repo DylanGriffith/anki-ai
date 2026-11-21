@@ -16,8 +16,11 @@ module AnkiAi
     # Common ones are `templates`, `generators`, or `middleware`, for example.
     config.autoload_lib(ignore: %w[assets tasks])
 
-    # Media content types are provided explicitly on import; no metadata analysis needed.
-    config.active_storage.analyze_new_attachments = false
+    # Media content types are set explicitly from the file extension on
+    # import (MediaFile.content_type_for); we never use analysis metadata
+    # (dimensions/duration), and the built-in audio analyzer would spawn
+    # one ffprobe process per imported media file. Run no analyzers.
+    config.active_storage.analyzers = []
 
     # Configuration for the application, engines, and railties goes here.
     #

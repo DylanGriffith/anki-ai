@@ -4,12 +4,14 @@ require "json"
 module Anki
   module Apkg
     # A .apkg/.colpkg file: a ZIP with a collection SQLite DB, a media manifest
-    # ("media", JSON number -> filename), and media members stored under numeric
+    # ("media": JSON number -> filename for older exports; a zstd-compressed
+    # protobuf message for Anki 23.10+), and media members stored under numeric
     # names. Container handling shells out to the system unzip binary so large
     # archives never sit in memory.
     class Package
       MANIFEST_MEMBER = "media"
       COLLECTION_PREFERENCE = %w[collection.anki21 collection.anki2].freeze
+      SQLITE_HEADER = "SQLite format 3".freeze
 
       def initialize(path)
         @path = Pathname.new(path)
@@ -24,6 +26,7 @@ module Anki
           @workdir = Pathname.new(dir)
           out, err, status = Open3.capture3("unzip", "-oq", @path.to_s, "-d", dir)
           raise Error, "unzip failed: #{err.presence || out}" unless status.success?
+          decompress_modern_media!
           yield self
         ensure
           @workdir = nil
@@ -31,27 +34,93 @@ module Anki
       end
 
       def collection
-        Collection.new(collection_path)
+        path = real_collection_path
+        db = SQLite3::Database.new(path.to_s, readonly: true)
+        ver = db.get_first_value("SELECT ver FROM col LIMIT 1")
+        db.close
+        case ver
+        when 11 then Collection.new(path)
+        when 18 then NewCollection.new(path)
+        else
+          raise Error, "unsupported collection schema version #{ver.inspect}"
+        end
       end
 
-      def collection_path
+      # Anki 23.10+ exports store the real collection in a zstd-compressed
+      # collection.anki21b and leave a placeholder note in the legacy
+      # collection.anki2 slot (a valid SQLite file whose single note says
+      # "Please update to the latest Anki version"). So anki21b, when
+      # present, is authoritative; legacy members are only used alone.
+      def real_collection_path
         raise Error, "not extracted; call extract! with a block" unless @workdir
+
+        anki21b = @workdir.join("collection.anki21b")
+        if anki21b.file?
+          raw = File.binread(anki21b.to_s)
+          raw = Anki::Zstd.decompress(raw) if Anki::Zstd.zstd?(raw)
+          target = @workdir.join("collection.anki21b.sqlite")
+          File.binwrite(target.to_s, raw)
+          return target if sqlite?(target)
+        end
 
         COLLECTION_PREFERENCE.each do |name|
           candidate = @workdir.join(name)
-          return candidate if candidate.file?
+          return candidate if sqlite?(candidate)
         end
-        raise UnsupportedFormatError,
-              "no legacy collection found (looked for collection.anki2/.anki21). " \
-              "If this file only contains collection.anki21b, re-export it from Anki " \
-              "with \"Support older Anki versions\" checked."
+
+        raise UnsupportedFormatError, "no usable collection found " \
+          "(looked for collection.anki2/.anki21/.anki21b)"
       end
 
-      # Hash of numeric member name -> real media filename.
+      def sqlite?(path)
+        return false unless path&.file?
+
+        File.binread(path.to_s, 16).to_s.start_with?(SQLITE_HEADER)
+      end
+
+      # In Anki 23.10+ exports the media members are zstd-compressed just
+      # like the manifest, so a zstd manifest means every numeric member
+      # must be decompressed in place before use. Legacy packages have a
+      # plain JSON manifest and raw members — those are left untouched
+      # (the manifest format, not a per-file magic sniff, decides: a
+      # legacy package may legitimately contain .zst media).
+      def decompress_modern_media!
+        manifest = @workdir.join(MANIFEST_MEMBER)
+        return unless manifest.file? && Anki::Zstd.zstd?(File.binread(manifest.to_s, 4))
+
+        Dir.glob(@workdir.join("*").to_s).each do |path|
+          next unless File.basename(path).match?(/\A\d+\z/)
+          next unless Anki::Zstd.zstd?(File.binread(path, 4))
+
+          File.binwrite(path, Anki::Zstd.decompress(File.binread(path)))
+        end
+      end
+
+      # Hash of numeric member name -> real media filename. Older exports
+      # store plain JSON; Anki 23.10+ stores a zstd-compressed protobuf
+      # message whose repeated field 1 entries carry the filenames in zip
+      # member order.
       def media_manifest
         @media_manifest ||= begin
           member = @workdir.join(MANIFEST_MEMBER)
-          member.file? ? JSON.parse(member.read) : {}
+          if member.file?
+            raw = File.binread(member.to_s)
+            raw = Anki::Zstd.decompress(raw) if Anki::Zstd.zstd?(raw)
+            parse_manifest(raw)
+          else
+            {}
+          end
+        end
+      end
+
+      def parse_manifest(raw)
+        if raw.lstrip.byteslice(0, 1) == "{"
+          JSON.parse(raw)
+        else
+          Anki::Protobuf.parse(raw)[1].to_a.each_with_index.map do |entry, idx|
+            fname = Anki::Protobuf.parse(entry)[1].first.to_s.dup.force_encoding("UTF-8")
+            [ idx.to_s, fname ]
+          end.to_h
         end
       end
 

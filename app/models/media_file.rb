@@ -1,6 +1,6 @@
 class MediaFile < ApplicationRecord
   belongs_to :deck
-  has_one_attached :file, service: :local
+  has_one_attached :file, service: :local, dependent: :purge_later
 
   validates :filename, presence: true, uniqueness: { scope: :deck_id },
                        format: { without: %r{[/\\]}, message: "must not contain path separators" }

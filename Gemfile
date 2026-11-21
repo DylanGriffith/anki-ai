@@ -3,6 +3,7 @@ source "https://rubygems.org"
 gem "rails", "~> 8.1.4", ">= 8.1.4.1"
 gem "propshaft"
 gem "sqlite3", ">= 2.1"
+gem "fiddle" # stdlib-externalized FFI (Ruby 4.0): binds system libzstd for Anki 23.10+ imports
 gem "puma", ">= 5.0"
 gem "importmap-rails"
 gem "turbo-rails"

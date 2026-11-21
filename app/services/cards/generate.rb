@@ -34,7 +34,11 @@ module Cards
       values = note_type.field_names.zip(note.fields).to_h
       note_type.card_requirements.filter_map do |(ord, kind, fields)|
         present = fields.map { |f| values[f].to_s.strip.present? }
-        satisfied = kind == "all" ? present.all? : present.any?
+        satisfied = case kind
+                    when "all" then present.all?
+                    when "none" then true
+                    else present.any?
+                    end
         ord if satisfied
       end
     end

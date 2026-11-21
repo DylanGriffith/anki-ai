@@ -66,20 +66,71 @@ class Anki::Apkg::PackageTest < ActiveSupport::TestCase
     end
 
     Anki::Apkg::Package.new(path).extract! do |pkg|
-      assert_match %r{collection\.anki21\z}, pkg.collection_path.to_s
+      assert_match %r{collection\.anki21\z}, pkg.real_collection_path.to_s
     end
   end
 
-  test "raises a helpful error for zstd-only collections (anki21b)" do
+  test "raises when the archive has no usable collection member" do
     Dir.mktmpdir do |dir|
-      FileUtils.touch(File.join(dir, "collection.anki21b"))
+      FileUtils.touch(File.join(dir, "collection.anki21b")) # not zstd, not SQLite
       path = File.join(dir, "out.apkg")
       system("zip", "-qj", path, File.join(dir, "collection.anki21b"), exception: true)
 
       error = assert_raises(Anki::Apkg::UnsupportedFormatError) do
-        Anki::Apkg::Package.new(path).extract! { |pkg| pkg.collection_path }
+        Anki::Apkg::Package.new(path).extract! { |pkg| pkg.collection }
       end
-      assert_match(/re-export it from Anki/i, error.message)
+      assert_match(/no usable collection/i, error.message)
+    end
+  end
+
+  test "reads an Anki 23.10+ package: schema 18 in a zstd anki21b, protobuf media manifest" do
+    builder = AnkiModernApkgBuilder.new
+      .add_model(id: 725886, name: "EN-FR", fields: %w[Front Back Audio],
+                 templates: [ { name: "Card 1", front: "{{Front}}", back: "{{FrontSide}}<hr>{{Back}}{{Audio}}" } ],
+                 css: ".card { color: red; }")
+      .add_model(id: 1777020778336, name: "FR-EN Cloze", type: 1, fields: %w[Text Extra],
+                 templates: [ { name: "Cloze", front: "{{cloze:Text}}", back: "{{cloze:Text}}{{hint:Extra}}" } ])
+      .add_deck(id: 1, name: "Default")
+      .add_deck(id: 1777020936287, name: "Dylan French Vocab", desc: "my desc")
+      .add_note(id: 1001, guid: "g1", mid: 725886,
+                fields: [ "être", "to be", "[sound:a.mp3]" ], tags: "core")
+      .add_card(id: 2001, nid: 1001, did: 1777020936287, due: 5)
+      .add_media("a.mp3", "fake-mp3-bytes")
+
+    with_apkg(builder, "modern") do |path|
+      Anki::Apkg::Package.new(path).extract! do |pkg|
+        col = pkg.collection
+        assert_instance_of Anki::Apkg::NewCollection, col
+
+        # Normalized tables, not the JSON columns of the placeholder anki2.
+        assert_equal 2, col.models.size
+        en_fr = col.models.fetch("725886")
+        assert_equal "EN-FR", en_fr["name"]
+        assert_equal 0, en_fr["type"]
+        assert_equal %w[Front Back Audio], en_fr["flds"].map { |f| f["name"] }
+        assert_equal ".card { color: red; }", en_fr["css"]
+        assert_equal "{{FrontSide}}<hr>{{Back}}{{Audio}}", en_fr["tmpls"].first["afmt"]
+        # req is not stored in schema 18; recomputed from the template front.
+        assert_equal [ [ 0, "any", [ "Front" ] ] ], en_fr["req"]
+
+        cloze = col.models.fetch("1777020778336")
+        assert_equal 1, cloze["type"]
+        assert_equal [ [ 0, "any", [ "Text" ] ] ], cloze["req"]
+
+        # Deck description comes from the protobuf kind blob.
+        deck = col.decks.fetch("1777020936287")
+        assert_equal "Dylan French Vocab", deck["name"]
+        assert_equal "my desc", deck["desc"]
+
+        assert_equal({ notes: 1, cards: 1, revlog: 0 }, col.counts)
+        note = col.each_note.first
+        assert_equal "g1", note[:guid]
+        assert_equal [ "être", "to be", "[sound:a.mp3]" ], note[:fields]
+
+        # Protobuf manifest keyed by member ordinal, members decompressed.
+        assert_equal({ "0" => "a.mp3" }, pkg.media_manifest)
+        assert_equal "fake-mp3-bytes", pkg.media_member(0).read
+      end
     end
   end
 

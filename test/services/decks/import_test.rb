@@ -206,4 +206,84 @@ class Decks::ImportTest < ActiveSupport::TestCase
     assert_equal 250, deck.notes.where("guid LIKE 'bulk-%'").count
     assert_equal 250, deck.cards.where("anki_card_id >= 1600002000000").count
   end
+
+  # Anki's "Change Note Type" keeps GUIDs, so a collection can legitimately
+  # hold distinct notes sharing a GUID (e.g. EN->FR and FR->EN of one word).
+  test "imports notes that share a guid" do
+    pkg = AnkiApkgBuilder.new(crt: CRT)
+      .add_model(id: 1600000000001, name: "EN-FR", fields: %w[Front Back],
+                 templates: [ { name: "Card 1", front: "{{Front}}", back: "{{Back}}" } ],
+                 req: [ [ 0, "any", [ "Front" ] ] ])
+      .add_model(id: 1600000000002, name: "FR-EN", fields: %w[Front Back],
+                 templates: [ { name: "Card 1", front: "{{Front}}", back: "{{Back}}" } ],
+                 req: [ [ 0, "any", [ "Front" ] ] ])
+      .add_deck(id: 1, name: "Default")
+      .add_note(id: 1600000000101, guid: "shared-guid", mid: 1600000000001,
+                fields: [ "hello", "bonjour" ])
+      .add_note(id: 1600000000102, guid: "shared-guid", mid: 1600000000002,
+                fields: [ "bonjour", "hello" ])
+      .add_card(id: 1600000000201, nid: 1600000000101, did: 1, due: 1)
+      .add_card(id: 1600000000202, nid: 1600000000102, did: 1, due: 2)
+
+    deck = with_apkg(pkg, "dupguid") { |path| Decks::Import.call(build_user, path) }
+
+    assert_equal 2, deck.notes.count
+    assert_equal 2, deck.cards.count
+    assert_equal 2, deck.note_types.count
+    assert_equal [ 1600000000101, 1600000000102 ], deck.notes.order(:anki_note_id).pluck(:anki_note_id)
+  end
+
+  test "imports an Anki 23.10+ package end-to-end with progress and media" do
+    user = build_user
+    reviewed_at = Time.at(1_766_000_000).utc
+    pkg = AnkiModernApkgBuilder.new
+      .add_model(id: 725886, name: "EN-FR", fields: %w[Front Back Audio],
+                 templates: [ { name: "Card 1", front: "{{Front}}", back: "{{FrontSide}}<hr>{{Back}}{{Audio}}" } ],
+                 css: ".card { color: red; }")
+      .add_model(id: 1777020778336, name: "FR-EN Cloze", type: 1, fields: %w[Text Extra],
+                 templates: [ { name: "Cloze", front: "{{cloze:Text}}", back: "{{cloze:Text}}" } ])
+      .add_deck(id: 1, name: "Default")
+      .add_deck(id: 1777020936287, name: "Dylan French Vocab", desc: "my desc")
+      .add_note(id: 1001, guid: "g1", mid: 725886,
+                fields: [ "être", "to be", "[sound:a.mp3]" ], tags: "core")
+      .add_card(id: 2001, nid: 1001, did: 1777020936287, due: 5)
+      .add_note(id: 1002, guid: "g2", mid: 1777020778336, fields: [ "un {{c1::chat}}", "" ])
+      .add_card(id: 2002, nid: 1002, did: 1777020936287, type: 2, queue: 2, due: 12,
+                ivl: 30, factor: 2500, reps: 4, lapses: 1)
+      .add_revlog(id: reviewed_at.to_i * 1000, cid: 2002, ease: 3, ivl: 30, time: 1500)
+      .add_media("a.mp3", "fake-mp3-bytes")
+
+    deck = with_apkg(pkg, "modern") { |path| Decks::Import.call(user, path) }
+
+    assert_equal "Dylan French Vocab", deck.name
+    assert_equal "my desc", deck.description
+
+    note = deck.notes.find_by!(guid: "g1")
+    assert_equal [ "être", "to be", "[sound:a.mp3]" ], note.fields
+    assert_equal "core", note.tags
+    assert deck.note_types.find_by!(name: "EN-FR").standard?
+    assert deck.note_types.find_by!(name: "FR-EN Cloze").cloze?
+    # req recomputed from the template front, normalized to field names.
+    assert_equal [ [ 0, "any", [ "Front" ] ] ], deck.note_types.find_by!(name: "EN-FR").card_requirements
+    assert_equal [ [ 0, "any", [ "Text" ] ] ], deck.note_types.find_by!(name: "FR-EN Cloze").card_requirements
+
+    # Progress follows the same SM-2 mapping as legacy imports.
+    state = deck.cards.find_by!(anki_card_id: 2002).state_for(user)
+    assert state.state_review?
+    assert_equal 30.0, state.stability
+    assert_equal 6.0, state.difficulty # factor 2500 -> ease 2.5
+    assert_equal Time.utc(2026, 1, 13), state.due # crt + 12 days
+    assert_equal 4, state.reps
+
+    log = deck.cards.find_by!(anki_card_id: 2002).review_logs.sole
+    assert log.rated_good?
+    assert_equal 1500, log.duration_ms
+    assert_equal reviewed_at, log.reviewed_at
+
+    # Media members are stored decompressed with the right content type.
+    media = deck.media_files.sole
+    assert_equal "a.mp3", media.filename
+    assert_equal "audio/mpeg", media.content_type
+    assert_equal "fake-mp3-bytes", media.file.blob.download
+  end
 end

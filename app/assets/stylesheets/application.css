@@ -119,6 +119,10 @@ audio { width: 100%; margin-top: 12px; }
 
 /* Study (step 3) */
 .anki-card { overflow-wrap: break-word; }
+/* Card content must never overflow the page: deck CSS may set fixed image
+   sizes, so clamp with !important (like Anki's own reviewer does). */
+.anki-card img, .anki-card video, .anki-card svg { max-width: 100% !important; height: auto !important; }
+.anki-card table { max-width: 100%; display: block; overflow-x: auto; }
 .answer-divider { margin: 20px 0; border: none; border-top: 1px solid var(--border); }
 .study-answer .btn small { display: block; font-size: 0.75rem; opacity: 0.85; }
 .btn--easy { background: #1e7d32; border-color: #1e7d32; }

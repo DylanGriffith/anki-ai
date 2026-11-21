@@ -73,15 +73,16 @@ module Decks
         model = @col.models.fetch(mid.to_s) do
           raise Anki::Apkg::Error, "note #{mid} references unknown model"
         end
+        field_names = model["flds"].sort_by.with_index { |f, i| f["ord"] || i }.map { |f| f["name"] }
         NoteType.create!(
           deck: deck,
           name: model["name"],
           kind: model["type"] == 1 ? :cloze : :standard,
-          field_names: model["flds"].sort_by { |f| f["ord"] }.map { |f| f["name"] },
-          templates: model["tmpls"].sort_by { |t| t["ord"] }.map do |t|
+          field_names: field_names,
+          templates: model["tmpls"].sort_by.with_index { |t, i| t["ord"] || i }.map do |t|
             { "name" => t["name"], "front" => t["qfmt"], "back" => t["afmt"] }
           end,
-          card_requirements: model["req"] || [],
+          card_requirements: normalize_requirements(model["req"], field_names),
           css: model["css"]
         )
       end.index_by { |nt| nt.name } # model names are unique in a collection
@@ -91,6 +92,15 @@ module Decks
       @col.models.fetch(mid.to_s, {}).fetch("name", nil)
     end
 
+    # Legacy Anki stores card requirements as [template_ord, kind,
+    # [field ordinals]]; our stored format uses field names so that
+    # Cards::Generate and the note type UI agree on one representation.
+    def normalize_requirements(req, field_names)
+      Array(req).filter_map do |(tord, kind, fld_ords)|
+        names = Array(fld_ords).map { |fo| fo.is_a?(Integer) ? field_names[fo] : fo }.compact
+        [ tord, kind, names ]
+      end
+    end
     def import_notes(deck, note_types)
       now = Time.now.utc
       rows = @notes.map do |n|
@@ -107,6 +117,7 @@ module Decks
         }
       end
       batch_insert(Note, rows)
+      assert_imported!(Note, deck.id, rows.size)
       Note.where(deck_id: deck.id).pluck(:anki_note_id, :id).to_h
     end
 
@@ -129,6 +140,7 @@ module Decks
         }
       end
       batch_insert(Card, rows)
+      assert_imported!(Card, deck.id, rows.size)
       Card.where(deck_id: deck.id).pluck(:anki_card_id, :id).to_h
     end
 
@@ -253,9 +265,20 @@ module Decks
     end
 
     # SQLite bounds statement variables, so insert in modest batches.
+    # insert_all! (never insert_all): Rails 8.1's insert_all appends
+    # ON CONFLICT DO NOTHING, so rows violating any uniqueness constraint
+    # would be silently dropped — an import must fail loudly instead.
     def batch_insert(model, rows)
       batch_size = [ 700 / model.column_names.size, 1 ].max
-      rows.each_slice(batch_size) { |batch| model.insert_all(batch) }
+      rows.each_slice(batch_size) { |batch| model.insert_all!(batch) }
+    end
+
+    # Belt and braces: nothing may drop rows between insert and lookup.
+    def assert_imported!(model, deck_id, expected)
+      actual = model.where(deck_id: deck_id).count
+      return if actual == expected
+
+      raise Anki::Apkg::Error, "imported only #{actual} of #{expected} #{model.name.pluralize}"
     end
   end
 end
