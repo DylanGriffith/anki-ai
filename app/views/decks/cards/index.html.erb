@@ -1,6 +1,8 @@
 <div class="page-header">
   <h1><%= @deck.name %> — cards</h1>
-  <%= link_to "Add card", new_card_deck_path(@deck), class: "btn" %>
+  <% if @deck.editable_by?(current_user) %>
+    <%= link_to "Add card", new_card_deck_path(@deck), class: "btn" %>
+  <% end %>
   <%= link_to "Back", deck_path(@deck), class: "btn btn--secondary" %>
 </div>
 

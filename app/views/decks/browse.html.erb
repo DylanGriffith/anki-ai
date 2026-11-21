@@ -1,0 +1,34 @@
+<div class="page-header">
+  <h1>Public decks</h1>
+  <%= link_to "Back to my decks", decks_path, class: "btn btn--secondary" %>
+</div>
+
+<p class="muted">
+  Study anyone's public deck with <strong>your own progress</strong> — the owner never
+  sees your reviews, and their studying doesn't touch yours.
+</p>
+
+<% if @decks.any? %>
+  <ul class="deck-list">
+    <% @decks.each do |deck| %>
+      <li>
+        <%# One click on the deck name starts studying, like on the main list. %>
+        <%= link_to deck.name, study_deck_path(deck), class: "deck-name", data: { turbo: false } %>
+        <span class="deck-meta">by <%= deck.user.name %> ·
+          <%= pluralize(deck.cards.count, "card") %></span>
+        <% due = @due_counts[deck.id].to_i %>
+        <% new_left = [ @new_counts[deck.id].to_i, deck.new_per_day ].min %>
+        <% if due.positive? %>
+          <span class="deck-meta"><span class="due-count"><%= due %> due</span> · <%= new_left %> new</span>
+        <% elsif new_left.positive? %>
+          <span class="deck-meta"><%= new_left %> new</span>
+        <% else %>
+          <span class="deck-meta">started</span>
+        <% end %>
+        <%= link_to "Details", deck_path(deck), class: "btn btn--secondary btn--compact", "aria-label": "Details for #{deck.name}" %>
+      </li>
+    <% end %>
+  </ul>
+<% else %>
+  <p class="empty">No public decks yet. Mark one of your decks public and it shows up here for everyone.</p>
+<% end %>

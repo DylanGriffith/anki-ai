@@ -11,7 +11,9 @@ AI agent that has tools to build a deck from a description.
   modules + service worker; no SPA framework, no animation).
 - **Scheduling**: hand-written FSRS (see `ARCHITECTURE.md`).
 - **Anki compatibility**: hand-written `.apkg` import/export (schema 11), template
-  renderer, and media/audio support.
+  renderer, and media/audio support. Modern Anki 23.10+ exports (zstd-compressed
+  `collection.anki21b`, schema 18) import too — via a Fiddle binding to the system
+  libzstd, no gem.
 
 ## Requirements
 
@@ -25,7 +27,7 @@ AI agent that has tools to build a deck from a description.
 ```bash
 bin/setup                # bundle, db create/migrate
 bin/rails "user:create[name=me,password=secret]"   # create a login
-bin/dev                  # or: bin/rails server + bin/jobs (Solid Queue worker)
+bin/rails server         # add SOLID_QUEUE_IN_PUMA=true (or run bin/jobs) for AI deck generation
 ```
 
 ### AI configuration (OpenAI-compatible endpoint)
@@ -125,16 +127,23 @@ and a check-in for approval before the next step.
       generate → study the deck, API failure UX, and unconfigured UX. Screenshots:
       `step6_new_ai_deck_button`, `step6_ai_form`, `step6_ai_done`, `step6_generated_deck`,
       `step6_generated_deck_study`, `step6_ai_failed`.
-- [ ] **Step 7 — Public decks & polish.** Public/private visibility; browse public
+- [x] **Step 7 — Public decks & polish.** Public/private visibility; browse public
       decks; study someone else's public deck with **your own separate progress**
       (progress rows are per-user from day one, this step exposes the UI). Final E2E
       pass over all flows, full screenshot set, README runbook finalization.
+      Done: "Browse public decks" page (everyone's public decks, owner attribution,
+      your own due/new counts on them), one-click study straight from it. Deck edit
+      form (name/description/visibility/daily limits) with owner-only write guards on
+      details, cards, add-card, edit, delete. Public decks are readable, studyable,
+      browsable and **exportable with the requester's own progress** everywhere
+      (study/media/cards/controllers all resolve through `Deck.visible_to`);
+      private decks 404 for everyone else. Full suite green: 152 runs
+      (unit + integration + system incl. two-user public-deck E2E). Screenshots:
+      `step7_owner_deck_public`, `step7_browse_public_decks`, `step7_reading_public_deck`.
 
 ## Non-goals (for now)
 
 - No registration flow (users created via rake task).
 - No Anki add-on ecosystem, no note-type sharing across decks, no nested deck management
   UI (subdeck info is preserved on cards; see ARCHITECTURE.md).
-- No zstd-compressed `collection.anki21b` import (schema 11 covers both fixtures and any
-  deck exported with "support older Anki versions"; can be added later with a zstd dep).
 - No deployment automation (app will be upgraded in place on a VM later).

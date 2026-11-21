@@ -64,8 +64,13 @@ Rails migrations; SQLite. Central idea **[DECISION 1]**:
 - `has_secure_password` + Rails cookie session; `login`/`logout` routes; every page
   behind `authenticate`.
 - `user:create[name,password]` rake task (no registration flow).
-- Visibility: `Deck.where(visibility: :public).or(Deck.where(user:))` for indexes.
-  Public decks are read/study-only for non-owners (no editing others' content).
+- Visibility: every read path resolves decks through `Deck.visible_to(user)`
+  (`public OR owned`). Public decks are studyable, browsable (the "Browse public
+  decks" page lists everyone else's public decks with **your own** due/new counts)
+  and exportable **with the requester's own progress**; writes (add card, edit
+  deck, delete) are owner-only. Studying someone else's deck creates progress rows
+  for *you* only — the schema was per-user from day one, so nothing leaks between
+  users (verified E2E: reader reviews never appear for the owner, and vice versa).
 
 ## Anki compatibility layer — `lib/anki`
 

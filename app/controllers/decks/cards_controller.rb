@@ -1,7 +1,7 @@
 class Decks::CardsController < ApplicationController
   before_action :require_login
   before_action :set_deck
-  before_action :require_owner
+  before_action :require_owner, only: [ :new, :create ]
 
   before_action :set_note_types, only: [ :new, :create ]
   before_action :set_note_type, only: [ :new, :create ]
@@ -40,7 +40,9 @@ class Decks::CardsController < ApplicationController
   private
 
   def set_deck
-    @deck = current_user.decks.find(params[:id])
+    # Public decks are browsable read-only; the write actions are guarded
+    # separately by require_owner.
+    @deck = Deck.visible_to(current_user).find(params[:id])
   end
 
   def require_owner

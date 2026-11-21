@@ -1,17 +1,21 @@
 class DecksController < ApplicationController
   before_action :require_login
-  before_action :set_deck, only: [ :show, :destroy, :export ]
+  before_action :set_deck, only: [ :show, :destroy, :export, :edit, :update ]
+  before_action :require_owner, only: [ :destroy, :edit, :update ]
 
   def index
     @decks = current_user.decks.order(:name)
     @ai_configured = Ai::Setting.current.configured?
-    @due_counts = CardState.joins(:card)
-                           .where(user: current_user, state: [ :learning, :relearning, :review ])
-                           .where("card_states.due <= ?", Time.now.utc)
-                           .group("cards.deck_id").count
-    introduced = CardState.where(user: current_user).where.not(state: :new).select(:card_id)
-    @new_counts = Card.where(deck: @decks, suspended: false)
-                       .where.not(id: introduced).group(:deck_id).count
+    @due_counts, @new_counts = deck_counts(@decks)
+  end
+
+  # Everyone's public decks (excluding your own — those are on the main list),
+  # with your own progress counts on them.
+  def browse
+    @ai_configured = Ai::Setting.current.configured?
+    @decks = Deck.where(visibility: :public).where.not(user: current_user)
+                 .order(:name).includes(:user)
+    @due_counts, @new_counts = deck_counts(@decks)
   end
 
   def new
@@ -28,6 +32,17 @@ class DecksController < ApplicationController
   end
 
   def show
+  end
+
+  def edit
+  end
+
+  def update
+    if @deck.update(deck_params)
+      redirect_to @deck, notice: "Deck updated."
+    else
+      render :edit, status: :unprocessable_entity
+    end
   end
 
   # Streams the deck as a schema-11 .apkg (Anki-importable, includes the
@@ -74,8 +89,27 @@ class DecksController < ApplicationController
 
   private
 
+  # Public decks are readable (and studyable/exportable with YOUR progress)
+  # by anyone; only the owner can destroy or modify them.
   def set_deck
-    @deck = current_user.decks.find(params[:id])
+    @deck = Deck.visible_to(current_user).find(params[:id])
+  end
+
+  def require_owner
+    head :forbidden unless @deck.editable_by?(current_user)
+  end
+
+  # due-now and new-left counts per deck for the CURRENT user (works for
+  # owned and public-studied decks alike — progress is always per-user).
+  def deck_counts(decks)
+    due_counts = CardState.joins(:card)
+                          .where(user: current_user, state: [ :learning, :relearning, :review ])
+                          .where("card_states.due <= ?", Time.now.utc)
+                          .group("cards.deck_id").count
+    introduced = CardState.where(user: current_user).where.not(state: :new).select(:card_id)
+    new_counts = Card.where(deck: decks, suspended: false)
+                     .where.not(id: introduced).group(:deck_id).count
+    [ due_counts, new_counts ]
   end
 
   def deck_params

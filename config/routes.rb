@@ -11,6 +11,7 @@ Rails.application.routes.draw do
   # Import routes must precede resources so "import" is not matched as an id.
   get  "decks/import" => "decks#import_form", as: :import_decks_form
   post "decks/import" => "decks#import", as: :import_decks
+  get  "decks/browse" => "decks#browse", as: :browse_decks
 
   # Offline sync: idempotent batch of client-generated review ops.
   post "sync", to: "sync#create"
@@ -20,7 +21,7 @@ Rails.application.routes.draw do
     resources :generations, only: [ :new, :create, :show ]
   end
 
-  resources :decks, only: [ :index, :new, :create, :show, :destroy ] do
+  resources :decks, only: [ :index, :new, :create, :show, :edit, :update, :destroy ] do
     member do
       get "media/:filename", to: "decks/media#show", as: :media, constraints: { filename: %r{[^/]+} }
       get "study", to: "decks/study#show", as: :study
