@@ -1,0 +1,12 @@
+<h1>Import Anki deck</h1>
+
+<%= form_with url: import_decks_path, multipart: true, local: true, class: "card card--narrow" do %>
+  <%= label_tag :file, ".apkg file" %>
+  <%= file_field_tag :file, accept: ".apkg,.colpkg", required: true %>
+
+  <%= label_tag :name, "Deck name (optional — defaults to the deck's own name)" %>
+  <%= text_field_tag :name %>
+
+  <%= submit_tag "Import" %>
+  <%= link_to "Cancel", decks_path, class: "btn btn--secondary" %>
+<% end %>

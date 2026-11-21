@@ -16,6 +16,9 @@ module AnkiAi
     # Common ones are `templates`, `generators`, or `middleware`, for example.
     config.autoload_lib(ignore: %w[assets tasks])
 
+    # Media content types are provided explicitly on import; no metadata analysis needed.
+    config.active_storage.analyze_new_attachments = false
+
     # Configuration for the application, engines, and railties goes here.
     #
     # These settings can be overridden in specific environments using the files

@@ -1,5 +1,9 @@
 class Deck < ApplicationRecord
   belongs_to :user
+  has_many :note_types, dependent: :destroy
+  has_many :notes, dependent: :destroy
+  has_many :cards, dependent: :destroy
+  has_many :media_files, dependent: :destroy
 
   enum :visibility, { private: 0, public: 1 }, prefix: :is
 

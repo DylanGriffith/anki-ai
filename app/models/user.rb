@@ -2,6 +2,8 @@ class User < ApplicationRecord
   has_secure_password
 
   has_many :decks, dependent: :destroy
+  has_many :card_states
+  has_many :review_logs
 
   validates :name, presence: true, uniqueness: { case_sensitive: false },
                    format: { with: /\A[a-zA-Z0-9_.-]+\z/, message: "letters, digits, ., -, _ only" }

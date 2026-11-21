@@ -99,6 +99,11 @@ button.linklike {
 .deck-list .deck-name { flex: 1; font-size: 1.05rem; }
 .deck-meta { color: var(--muted); font-size: 0.85rem; }
 
+/* Deck page */
+.deck-stats { display: flex; flex-wrap: wrap; gap: 16px; }
+.deck-stats div { min-width: 90px; }
+.deck-description { color: var(--muted); }
+
 /* Study area (used from step 3) */
 .study-card {
   border: 1px solid var(--border);

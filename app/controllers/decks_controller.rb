@@ -27,6 +27,24 @@ class DecksController < ApplicationController
     redirect_to decks_path, notice: "Deck deleted."
   end
 
+  def import_form
+  end
+
+  def import
+    upload = params[:file]
+    if upload.blank? || !upload.respond_to?(:tempfile)
+      flash.now[:alert] = "Choose a .apkg file to import."
+      return render :import_form, status: :unprocessable_entity
+    end
+
+    deck = Decks::Import.call(current_user, upload.tempfile.path, name: params[:name].presence)
+    redirect_to deck, notice: "Imported “#{deck.name}”: #{deck.cards.count} cards, " \
+                              "#{deck.media_files.count} media files."
+  rescue Anki::Apkg::Error => e
+    flash.now[:alert] = "Import failed: #{e.message}"
+    render :import_form, status: :unprocessable_entity
+  end
+
   private
 
   def set_deck

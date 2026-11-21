@@ -7,10 +7,26 @@
   <p class="deck-description"><%= @deck.description %></p>
 <% end %>
 
-<div class="card">
-  <p>Cards, studying and import will arrive in the next steps.</p>
-  <p class="muted">Daily limits: <%= @deck.new_per_day %> new, <%= @deck.reviews_per_day %> reviews.</p>
-</div>
+<% if @deck.cards.any? %>
+  <div class="card">
+    <div class="deck-stats">
+      <div><strong><%= @deck.cards.count %></strong> cards</div>
+      <div><strong><%= @deck.notes.count %></strong> notes</div>
+      <div><strong><%= @deck.note_types.count %></strong> note types</div>
+      <div><strong><%= @deck.media_files.count %></strong> media files</div>
+      <% subdecks = @deck.cards.distinct.pluck(:anki_subdeck).reject(&:blank?) %>
+      <% if subdecks.any? %>
+        <div><strong><%= subdecks.count %></strong> subdecks</div>
+      <% end %>
+    </div>
+  </div>
+  <p class="muted">Studying arrives in the next step.</p>
+<% else %>
+  <div class="card">
+    <p>Cards arrive by importing an Anki deck or creating them here (next steps).</p>
+    <p class="muted">Daily limits: <%= @deck.new_per_day %> new, <%= @deck.reviews_per_day %> reviews.</p>
+  </div>
+<% end %>
 
 <div class="actions">
   <%= button_to "Delete deck", deck_path(@deck), method: :delete, class: "btn btn--danger",
