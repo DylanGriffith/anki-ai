@@ -78,12 +78,18 @@ and a check-in for approval before the next step.
       Add-card form with **"add to next"** checkbox (jumps the queue instead of
       appending). Unit tests for FSRS + system tests for a full study session.
       Screenshots.
-- [ ] **Step 4 — Offline review + idempotent sync.** Service worker caches the study
-      page + media; study page embeds the remaining queue as JSON; vanilla JS runs the
-      session when offline and appends rating ops to an IndexedDB outbox. `POST /sync`
-      applies ops idempotently (unique op id; replay is a no-op) and returns
-      authoritative state. E2E test that goes offline via Chrome DevTools protocol,
-      reviews, comes back online, and syncs. Screenshots (incl. offline state).
+- [x] **Step 4 — Offline review + idempotent sync.** The study page serializes the
+      whole queue (both sides pre-rendered, per-rating intervals, typed-answer
+      expectations) as JSON and a vanilla-JS session runs it entirely client-side —
+      the same code path online and offline. Reviews go to `POST /sync` immediately
+      when online; offline they queue in an IndexedDB outbox that flushes on
+      reconnect. `sync_ops` is a unique-op-id ledger so replays are no-ops (double
+      flushes, retries, duplicated submissions all collapse). A service worker
+      caches study pages (per-user), deck media and assets so offline tabs still
+      reach the deck list and study pages. E2E: Chrome DevTools offline emulation +
+      a service-worker test hook (CDP emulation doesn't reach SW-context fetches),
+      review offline, offline navigation, reconnect, idempotent replay. Screenshots
+      (incl. offline state).
 - [ ] **Step 5 — `.apkg` export.** Hand-written writer: builds a schema-11
       `collection.anki2` in a temp SQLite DB with the requesting user's progress mapped
       back to Anki's SM-2 columns + revlog, zips with media, streams the download.

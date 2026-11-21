@@ -5,6 +5,8 @@ class ApplicationController < ActionController::Base
   # Changes to the importmap will invalidate the etag for HTML responses
   stale_when_importmap_changes
 
+  before_action :stamp_service_worker_user
+
   helper_method :current_user
 
   private
@@ -14,6 +16,17 @@ class ApplicationController < ActionController::Base
   end
 
   def require_login
-    redirect_to login_path, alert: "Please sign in first." unless current_user
+    return if current_user
+    if request.format.json?
+      head :unauthorized
+    else
+      redirect_to login_path, alert: "Please sign in first."
+    end
+  end
+
+  # Identifies the authenticated user to the service worker so it can keep
+  # per-user offline page caches on shared browsers (see public/service-worker.js).
+  def stamp_service_worker_user
+    response.headers["X-Anki-User-Id"] = current_user&.id.to_s
   end
 end

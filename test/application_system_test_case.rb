@@ -21,6 +21,40 @@ end
 class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
   driven_by :headless_chrome_e2e
 
+  # Offline study keeps state in the browser (service worker, its caches and
+  # the IndexedDB outbox) that Capybara's reset does not touch, and test
+  # databases roll back to reused ids — stale outbox ops would filter away a
+  # later test's whole queue. Clear all of it after every test.
+  teardown do
+    clear_offline_storage
+  end
+
+  def clear_offline_storage
+    page.evaluate_async_script(<<~JS)
+      const done = arguments[arguments.length - 1];
+      (async () => {
+        try {
+          const dbs = await indexedDB.databases();
+          await Promise.all(dbs.map((db) => new Promise((resolve) => {
+            const request = indexedDB.deleteDatabase(db.name);
+            request.onsuccess = request.onerror = request.onblocked = () => resolve();
+          })));
+        } catch (e) {}
+        try {
+          const keys = await caches.keys();
+          await Promise.all(keys.map((key) => caches.delete(key)));
+        } catch (e) {}
+        try {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(regs.map((reg) => reg.unregister()));
+        } catch (e) {}
+        done(true);
+      })()
+    JS
+  rescue StandardError
+    nil
+  end
+
   # Saves a screenshot as feature evidence in screenshots/.
   def evidence(name)
     path = Rails.root.join("screenshots", "#{name}.png")
@@ -42,6 +76,34 @@ class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
       raise "page never finished loading" if Time.now > deadline
       sleep 0.05
     end
+    # Turbo visits keep readyState "complete" the whole time; wait for the
+    # visit lifecycle to finish so interactions hit the final DOM, not one
+    # that is about to be swapped (Selenium can type into a body that turbo
+    # then replaces, silently losing the input).
+    while page.evaluate_script("window.__turboBusy !== false")
+      raise "turbo visit never finished" if Time.now > deadline
+      sleep 0.05
+    end
+  end
+
+  # Chrome can silently drop synthesized keystrokes when they land in the
+  # same instant as a turbo render swapping the body (observed roughly one in
+  # five runs): fill_in reports success but the field stays empty, and the
+  # form then fails HTML validation. Verify the value landed and retry —
+  # ending with a direct value set if the input pipeline keeps dropping keys.
+  def fill_in(locator, with:)
+    settle
+    super
+    field = find(:field, locator)
+    return if field.value == with
+
+    field.set(with)
+    return if field.value == with
+
+    field.execute_script("this.value = arguments[0]; this.dispatchEvent(new Event('input', { bubbles: true }))", with)
+    return if field.value == with
+
+    raise "fill_in lost its input for #{locator}"
   end
 
   # Click a submit button via a DOM click(), after settling. Exercises the
@@ -65,6 +127,11 @@ class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
   def click_on(locator, **options)
     settle
     find(:link_or_button, locator, **options).execute_script("this.click()")
+    # The click may have started a turbo visit, which keeps readyState
+    # "complete" while it fetches and swaps the body. Wait for the visit to
+    # finish so the next interaction (fill, click, assert) targets the final
+    # DOM instead of a body that is about to be replaced.
+    settle
   end
 
   # Sign in through the UI. Signing in is the first interaction after the

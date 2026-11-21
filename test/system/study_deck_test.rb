@@ -1,36 +1,7 @@
 require "application_system_test_case"
 
 class StudyDeckTest < ApplicationSystemTestCase
-  def build_study_apkg
-    AnkiApkgBuilder.new
-      .add_model(id: 1600000000001, name: "Basic", fields: %w[Front Back Audio],
-                 templates: [ { name: "Card 1", front: "{{Front}}",
-                                back: "{{FrontSide}}<hr id=answer>{{Back}}{{Audio}}" } ])
-      .add_deck(id: 1650000000001, name: "Study Test", desc: "Small deck for E2E")
-      .add_note(id: 1600000000101, guid: "g1", mid: 1600000000001,
-                fields: [ "hello", "bonjour", "" ])
-      .add_note(id: 1600000000102, guid: "g2", mid: 1600000000001,
-                fields: [ "dog", "chien", "" ])
-      .add_note(id: 1600000000103, guid: "g3", mid: 1600000000001,
-                fields: [ "water", "l'eau", "[sound:water.mp3]" ])
-      .add_card(id: 1600000000201, nid: 1600000000101, did: 1650000000001, due: 1)
-      .add_card(id: 1600000000202, nid: 1600000000102, did: 1650000000001, due: 2)
-      .add_card(id: 1600000000203, nid: 1600000000103, did: 1650000000001, due: 3)
-      .add_media("water.mp3", "fake-mp3-water-bytes")
-  end
-
-  def login_and_import
-    User.create!(name: "student", password: "password123")
-    sign_in_as("student", "password123")
-
-    with_apkg(build_study_apkg, "study-e2e") do |path|
-      click_on "Import .apkg"
-      attach_file "file", path
-      click_submit("Import")
-    end
-    assert_selector "h1", text: "Study Test"
-    User.find_by!(name: "student").decks.find_by!(name: "Study Test")
-  end
+  include StudySystemHelpers
 
   test "full study session: reveal, rate, progress and audio" do
     deck = login_and_import
@@ -44,7 +15,7 @@ class StudyDeckTest < ApplicationSystemTestCase
     assert_text "hello"
     assert_no_text "bonjour"
     # Show Answer sits in the bottom-pinned answer bar
-    assert_selector ".answer-bar input[value='Show Answer']"
+    assert_selector ".answer-bar button", text: "Show Answer"
     assert_equal "fixed", page.evaluate_script(
       "getComputedStyle(document.querySelector('.answer-bar')).position"
     )
@@ -52,13 +23,13 @@ class StudyDeckTest < ApplicationSystemTestCase
     spans_bar = page.evaluate_script(<<~JS)
       (() => {
         const bar = document.querySelector(".answer-bar").getBoundingClientRect();
-        const btn = document.querySelector(".answer-bar input[value='Show Answer']").getBoundingClientRect();
+        const btn = document.querySelector(".answer-bar .btn--block").getBoundingClientRect();
         return bar.width - btn.width < 26;
       })()
     JS
     assert spans_bar, "Show Answer should span the full answer bar width"
     show_h = page.evaluate_script(
-      "document.querySelector(\".answer-bar input[value='Show Answer']\").getBoundingClientRect().height"
+      "document.querySelector('.answer-bar .btn--block').getBoundingClientRect().height"
     )
     evidence("step3_study_question")
 

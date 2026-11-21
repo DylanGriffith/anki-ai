@@ -1,3 +1,8 @@
+<% content_for :head do %>
+  <%# Restore via back button should re-render fresh, not a stale session. %>
+  <meta name="turbo-cache-control" content="no-cache">
+<% end %>
+
 <div class="page-header">
   <h1><%= @deck.name %></h1>
   <span class="deck-meta"><%= pluralize(@counts[:due_now], "due") %> · <%= pluralize(@counts[:new_remaining], "new") %></span>
@@ -5,17 +10,19 @@
 </div>
 
 <% if @cards.any? %>
-  <%= form_with url: study_reveal_deck_path(@deck), method: :post,
-        data: { controller: "study", study_show_answer_value: "1", turbo: false } do %>
-    <%= hidden_field_tag :card_id, @card.id %>
-    <div class="study-card anki-card">
-      <style><%= CardHtml.css(@note_type) %></style>
-      <%= @question_html %>
-    </div>
-    <div class="answer-bar">
-      <%= submit_tag "Show Answer", class: "btn btn--block", data: { study_target: "showAnswer" } %>
-    </div>
-  <% end %>
+  <%# Both sides of every queued card, pre-rendered (see Reviewing::SessionSerializer).
+      "<" is escaped as \u003c so the JSON can never break out of the script tag. %>
+  <script type="application/json" id="study-session-data"><%= @session.to_json.gsub("<", '\u003c').html_safe %></script>
+  <style><%= @session["css"].to_s.html_safe %></style>
+
+  <div id="study-session">
+    <div class="study-card anki-card"></div>
+    <div class="answer-bar"></div>
+    <p class="sync-status" hidden></p>
+    <noscript>
+      <div class="card"><p><strong>JavaScript is required to study.</strong> The session runs in your browser so reviewing also works offline.</p></div>
+    </noscript>
+  </div>
 <% elsif @counts[:next_due_at] %>
   <div class="card">
     <p><strong>No cards ready right now.</strong></p>

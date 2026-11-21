@@ -24,7 +24,8 @@ challenged now — they get expensive to change later.
  │ Pages (server-rendered HTML)  │   │ Controllers ──► Services       │  │ Solid Queue  │
  │ SW cache: study page + media  │◄──┤  Sessions (auth)               │  │  Ai:: jobs   │
  │ IndexedDB outbox (sync ops)   │──►│  Decks:: Import/Export/Builder │◄─┤  (agent loop)│
- │ Study session (offline mode)  │   │  Reviewing:: apply/schedule    │  └──────┬───────┘
+ │ Study session (client-side,   │   │  Reviewing:: apply/schedule    │  └──────┬───────┘
+ │  online + offline alike)      │   │  Syncing:: ApplyOps (ledger)   │         │
  └───────────────────────────────┘   │  lib/anki (apkg reader/writer, │         │
         POST /sync (batched ops)     │   template engine)             │         ▼
                                      │  Fsrs (scheduler, pure)        │  Ai::Client ──► OpenAI-compatible API
@@ -131,25 +132,49 @@ Anki-like). "Add to next" = create card with `position` below the current minimu
 
 ## Offline review & sync
 
-**[DECISION 6] — Embedded queue + SW cache + IndexedDB outbox.**
+**[DECISION 6] — Client-side session + SW cache + IndexedDB outbox (one code path
+for online and offline).**
 
-- Every study page render embeds the remaining session queue as JSON in the page
-  (card fields, template, audio URLs — the session is capped by daily limits, so this
-  is small). Online use needs zero JS: answering is a plain form POST; the server
-  applies the review via `Reviewing::Apply` and re-renders the next card (and fresh
-  embedded queue).
-- The service worker (hand-written, ~100 lines) precaches the study page (network-first,
-  cache fallback) and media (cache-first, opaque) when a study session starts. It also
-  serves the app shell for reloads while offline.
-- When `navigator.onLine` is false (or a POST fails), the vanilla study script takes
-  over: it renders cards from the embedded queue, records each answer as an
-  **op** in IndexedDB: `{op_id: uuid, kind: "review", card_id, rating, reviewed_at,
-  duration_ms}`. A tiny outbox module flushes `POST /sync` on `online` event / next
-  visit.
-- `POST /sync` wraps each op in its own transaction: insert `sync_ops` row keyed on
-  `op_id` (unique) — if it already exists, skip (idempotent replay). Apply via the same
-  `Reviewing::Apply` service the online path uses. Response returns the authoritative
-  card states so the client can reconcile. Sync is safe to call repeatedly/partially.
+- The study page serializes the remaining queue **once** as JSON in the page (both
+  sides of every card pre-rendered, per-rating interval previews, note-type CSS,
+  typed-answer expectations for `{{type:Field}}` cards; the queue is capped by daily
+  limits, so this stays small). A framework-free vanilla module
+  (`app/javascript/study_session.js`) runs the whole session client-side: reveal,
+  rating, keyboard shortcuts, audio autoplay, typed-answer comparison. Online and
+  offline behavior is identical except **where each review goes**: straight to
+  `POST /sync` when the network is up, or into an IndexedDB outbox when it isn't.
+  This replaces the server round-trip-per-card form flow — reviews become instant
+  and there is no separate "offline mode" to keep visually in sync.
+- Reviews are **ops**: `{op_id: uuid, kind: "review", payload: {card_id, rating,
+  reviewed_at, duration_ms}}`. The outbox flushes on the `online` event, on the next
+  session start, and on a small periodic retry (the `online` event can be missed —
+  sleeping devices, captive portals). A sync failure of any kind (including a
+  mid-rating drop) routes the op to the outbox instead of losing it.
+- `POST /sync` applies each op in its own transaction: insert a `sync_ops` ledger
+  row keyed on unique `op_id` first, then apply via the same `Reviewing::Apply`
+  service the rating buttons use (`reviewed_at` comes from the client so offline
+  reviews land at the time they actually happened; future timestamps are clamped).
+  Already-seen `op_id` → reported as `duplicate` and skipped; `review_logs.sync_op_id`
+  has a unique partial index as a second guard. Per-op statuses let the client drop
+  anything the server definitively handled (`applied`/`duplicate`/`invalid`) and keep
+  the rest for retry. Ops referencing cards the user cannot see are rejected, so a
+  stale cached page from another user can never write foreign progress.
+- The hand-written service worker (`public/service-worker.js`, no Workbox): HTML
+  navigations network-first with cache fallback, cached **per user** (keyed by an
+  `X-Anki-User-Id` response header — shared browsers never serve one user's cached
+  queue to another; only the most recent user's pages are kept); deck media and
+  fingerprinted assets cache-first (a cached full 200 response legally answers
+  Range requests, so audio seeking works offline; 206 partials are never cached).
+  The study page warms the caches when a session starts: media for every queued
+  card, the page itself, and its assets — so offline navigation (new tab, reload)
+  still reaches the deck list and study pages, and a cached study page filters out
+  cards whose ops are still in the outbox (no double-review before syncing).
+- **E2E testing note:** CDP `Network.emulateNetworkConditions` (Selenium
+  `network_conditions=`) does **not** block service-worker-context fetches — the
+  worker kept hitting the server during "offline" emulation. The tests therefore
+  also flip a small test hook in the worker (`test-offline` postMessage, ack'd)
+  that forces its offline branches (cache-only pages/assets, network-style
+  failures for everything else). No production code sends that message.
 
 ## AI deck generation — `Ai::*` (isolated)
 
@@ -178,15 +203,18 @@ scripted fake server, and can be deleted without touching study/import code.
 
 ## Frontend strategy
 
-**[DECISION 8] — Keep Turbo + Stimulus (Rails defaults), everything else vanilla.**
-Turbo gives server-rendered polling/updates with no hand-rolled fetch code; Stimulus
-(≈4 KB) is just an organizer for the ~5 small behaviors we need (SW registration,
-outbox flush button, study keyboard shortcuts, audio autoplay). Removed from the
-scaffolded app: `solid_cable` (no websockets), `solid_cache` (default memory store is
-enough), `jbuilder` (render JSON with `.to_json`/ERB), `image_processing` + its
-mini_magick tree (no image variants), `kamal`/`thruster` (in-place VM deployment, not
-container deploy — re-add later if needed). PWA manifest kept (mobile installable);
-`transition: none` globally; mobile-first minimal CSS, Anki-like typography.
+**[DECISION 8] — Keep Turbo (Rails default), everything else vanilla.**
+Turbo gives server-rendered pages and link navigation with no hand-rolled fetch code.
+The study session itself (`app/javascript/study_session.js`) is deliberately a plain
+ES module — no Stimulus, no framework — since it owns reveal/rating/keyboard/audio/
+outbox/offline-switch as one cohesive unit and is the piece users depend on most.
+Stimulus stayed in the importmap for any future small controllers (none currently).
+Removed from the scaffolded app: `solid_cable` (no websockets), `solid_cache`
+(default memory store is enough), `jbuilder` (render JSON with `.to_json`/ERB),
+`image_processing` + its mini_magick tree (no image variants), `kamal`/`thruster`
+(in-place VM deployment, not container deploy — re-add later if needed). PWA manifest
+kept (mobile installable); `transition: none` globally; mobile-first minimal CSS,
+Anki-like typography.
 
 ## Testing strategy
 
@@ -195,8 +223,9 @@ container deploy — re-add later if needed). PWA manifest kept (mobile installa
   task), template engine, FSRS, sync idempotency, AI agent against the fake server.
 - **System/E2E** (headless Chrome, selenium-webdriver — already scaffolded): login,
   import, study session, add card ("add to next"), offline → online sync (Chrome
-  DevTools protocol network emulation), export, AI generation (fake server). System
-  tests save screenshots to `screenshots/` at key points; committed as evidence.
+  DevTools network emulation + the service-worker offline test hook — CDP emulation
+  alone does not reach SW-context fetches), export, AI generation (fake server).
+  System tests save screenshots to `screenshots/` at key points; committed as evidence.
 - CI (`.github/workflows/ci.yml`) keeps brakeman/bundler-audit; test jobs added when
   the suite is real.
 

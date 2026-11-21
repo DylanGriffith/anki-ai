@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_21_162000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_21_182000) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.string "name", null: false
     t.string "record_type", null: false
@@ -145,6 +145,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_162000) do
     t.index ["user_id"], name: "index_review_logs_on_user_id"
   end
 
+  create_table "sync_ops", force: :cascade do |t|
+    t.string "op_id", null: false
+    t.integer "user_id", null: false
+    t.string "kind", null: false
+    t.json "payload", null: false
+    t.datetime "applied_at", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["op_id"], name: "index_sync_ops_on_op_id", unique: true
+    t.index ["user_id", "applied_at"], name: "index_sync_ops_on_user_id_and_applied_at"
+  end
+
   create_table "users", force: :cascade do |t|
     t.string "name", null: false
     t.string "password_digest", null: false
@@ -166,4 +178,5 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_162000) do
   add_foreign_key "notes", "note_types"
   add_foreign_key "review_logs", "cards"
   add_foreign_key "review_logs", "users"
+  add_foreign_key "sync_ops", "users"
 end

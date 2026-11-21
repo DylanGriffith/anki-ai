@@ -132,7 +132,15 @@ button.linklike {
 .answer-bar .btn--block { max-width: none; } /* Show Answer: spans the whole bar */
 .answer-bar .btn small { display: block; font-size: 0.75rem; opacity: 0.85; }
 .answer-bar .btn { min-height: 64px; } /* rating buttons carry a second line; keep every bar button the same height */
-.study-card { margin-bottom: 110px; } /* scrolled content clears the bar */
+.study-card { margin-bottom: 110px; }
+
+/* Offline sync status, floating just above the answer bar */
+.sync-status {
+  position: fixed; inset-inline: 0; bottom: calc(86px + env(safe-area-inset-bottom, 0px));
+  z-index: 19; margin: 0; padding: 4px 12px;
+  text-align: center; font-size: 0.85rem; color: var(--muted);
+  pointer-events: none;
+} /* scrolled content clears the bar */
 
 audio { width: 100%; margin-top: 12px; }
 
