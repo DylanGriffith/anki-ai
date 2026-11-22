@@ -163,7 +163,11 @@ module Ai
         @generation.log!(type: "status", text: "starting", model: @generation.model)
         MAX_TURNS.times do |turn|
           @generation.update!(turn_count: turn + 1)
-          reply = @client.chat(model: @generation.model, messages: @messages, tools: TOOL_SCHEMA)
+          reply = @client.chat(model: @generation.model, messages: @messages, tools: TOOL_SCHEMA,
+                               on_delta: ->(state) {
+                                 @generation.log_stream!(text: state[:content],
+                                                         tool_calls: state[:tool_calls])
+                               })
 
           @messages << { role: "assistant", content: reply[:content],
                          tool_calls: reply[:tool_calls].map { |c| { id: c[:id], type: "function",
@@ -212,7 +216,7 @@ module Ai
         entry = { type: "assistant", turn: @generation.turn_count, at: Time.now.utc.to_i }
         entry[:text] = reply[:content] if reply[:content].present?
         entry[:tool_calls] = reply[:tool_calls].map { |c| c[:name] } if reply[:tool_calls].any?
-        @generation.log!(entry)
+        @generation.log_assistant!(entry)
       end
 
       # Executes one tool; returns [result_hash, error_flag]. Tool errors are

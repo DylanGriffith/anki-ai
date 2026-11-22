@@ -28,8 +28,12 @@ class FakeOpenAIServer
         entry = @server.next_chat_response
         return json(500, { error: { message: "script exhausted" } }) unless entry
 
-        json(200, { id: "chatcmpl-fake", object: "chat.completion",
-                    choices: [ { index: 0, message: message_for(entry), finish_reason: "tool_calls" } ] })
+        if @server.requests.last[:body]["stream"] && @server.streaming?
+          sse_stream(entry)
+        else
+          json(200, { id: "chatcmpl-fake", object: "chat.completion",
+                      choices: [ { index: 0, message: message_for(entry), finish_reason: "tool_calls" } ] })
+        end
       else
         json(404, { error: { message: "no such endpoint" } })
       end
@@ -38,6 +42,44 @@ class FakeOpenAIServer
     end
 
     private
+
+    # Server-Sent Events stream, like a real OpenAI-compatible server:
+    # text and tool-call arguments split across multiple deltas.
+    def sse_stream(entry)
+      events = []
+      if entry[:error]
+        events << { choices: [ { index: 0, delta: { role: "assistant" } } ] }
+        entry[:error].to_s.chars.each_slice(40) do |slice|
+          events << { choices: [ { index: 0, delta: { content: slice.join } } ] }
+        end
+      else
+        events << { choices: [ { index: 0, delta: { role: "assistant", content: nil } } ] }
+        entry[:content].to_s.chars.each_slice(8).each do |slice|
+          events << { choices: [ { index: 0, delta: { content: slice.join } } ] }
+        end
+        Array(entry[:tool_calls]).each_with_index do |call, index|
+          header = { index: index, id: "call-#{call.object_id}", type: "function" }
+          header[:function] = { name: call[:name], arguments: "" }
+          events << { choices: [ { index: 0, delta: { tool_calls: [ header ] } } ] }
+          JSON.generate(call[:arguments] || {}).chars.each_slice(12).each do |slice|
+            events << { choices: [ { index: 0,
+                                     delta: { tool_calls: [ { index: index,
+                                                             function: { arguments: slice.join } } ] } } ] }
+          end
+        end
+      end
+      events << { choices: [ { index: 0, delta: {}, finish_reason: "tool_calls" } ] }
+
+      # Each SSE event split mid-line into two chunks, so the client's
+      # incremental buffer handling (partial lines across reads) is
+      # genuinely exercised.
+      body = events.flat_map do |event|
+        text = "data: #{JSON.generate(event)}\n\n"
+        half = (text.length / 2.0).ceil
+        [ text[0, half], text[half..] ]
+      end << "data: [DONE]\n\n"
+      [ 200, { "Content-Type" => "text/event-stream" }, body ]
+    end
 
     def message_for(entry)
       if entry[:error]
@@ -58,8 +100,9 @@ class FakeOpenAIServer
 
   attr_reader :models, :requests
 
-  def initialize(models: %w[fake-mini fake-pro])
+  def initialize(models: %w[fake-mini fake-pro], streaming: true)
     @models = models
+    @streaming = streaming
     @script = []
     @requests = []
     @mutex = Mutex.new
@@ -83,6 +126,10 @@ class FakeOpenAIServer
 
   def url
     "http://127.0.0.1:#{@port}"
+  end
+
+  def streaming?
+    @streaming
   end
 
   # Queue one scripted assistant turn: content and/or tool_calls

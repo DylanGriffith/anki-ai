@@ -22,6 +22,28 @@ module Ai
       save!
     end
 
+    # While the model streams, replace the in-progress assistant entry in
+    # place (no entry spam) at most once per second.
+    def log_stream!(text:, tool_calls: [])
+      now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      return if @last_stream_at && (now - @last_stream_at) < 1.0
+
+      @last_stream_at = now
+      entries = journal
+      entries.pop if entries.last&.dig("streaming")
+      entries << { "type" => "assistant", "text" => text, "tool_calls" => tool_calls,
+                   "streaming" => true }
+      update!(transcript: JSON.generate(entries))
+    end
+
+    # The final assistant entry replaces any streaming placeholder.
+    def log_assistant!(entry)
+      entries = journal
+      entries.pop if entries.last&.dig("streaming")
+      self.transcript = JSON.generate(entries << entry.as_json)
+      save!
+    end
+
     def journal
       JSON.parse(transcript || "[]")
     end

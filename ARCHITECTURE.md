@@ -196,8 +196,11 @@ ActiveRecord models and one job enqueue; it has its own namespace, its own tests
 scripted fake server, and can be deleted without touching study/import code.
 
 - `Ai::Client` — hand-written OpenAI-compatible client over `Net::HTTP`
-  (`POST {base_url}/chat/completions` with `tools`; `GET {base_url}/models`). Config
-  from `ai_settings` (set by `rake ai:config[base_url,api_key]`; key encrypted at rest).
+  (`POST {base_url}/chat/completions` with `tools`; `GET {base_url}/models`); streaming
+  chat (`stream: true`) parses SSE over chunked `read_body` with line buffering — plain
+  `Net::HTTP`, no new dependency — and falls back to a plain completion if the server
+  ignores `stream`. Config from `ai_settings` (set by `rake ai:config[base_url,api_key]`;
+  key encrypted at rest).
 - `Ai::Agent::DeckBuilder` — the loop: system prompt (deck-builder persona + tool
   schemas) → model responds (assistant text and/or tool calls) → job executes tools →
   tool results appended → repeat until the model calls `finish` or a turn/tool-call
@@ -213,12 +216,22 @@ scripted fake server, and can be deleted without touching study/import code.
   "New AI deck" form (description + model dropdown from the cached `/models` list —
   free-text fallback when the API is unreachable) just enqueues and redirects to the
   generation status page. While pending/running that page polls itself every 2s with a
-  plain `Turbo.visit(…, { action: "replace" })` — no framework, no websocket.
+  plain `Turbo.visit(…, { action: "replace" })` — no framework, no websocket. Progress
+  is incremental: the agent streams each turn (`on_delta`) into the transcript via
+  `Ai::Generation#log_stream!` — a single in-progress entry replaced in place, throttled
+  to one write per second — and `log_assistant!` swaps in the final entry, so polling
+  shows live text/tool-call progress instead of one burst at the end. The transcript
+  renders as collapsed `<details>` rows (role/tool name in the summary, text or JSON
+  inside), auto-scrolled to the bottom, with a status dot: orange while pending/running,
+  green when done, red when failed.
 - The API key is encrypted at rest with `ActiveSupport::MessageEncryptor` keyed from
   `secret_key_base` (no Rails AR-encryption credentials setup to juggle).
 - Tests: a fake OpenAI server (`test/support/fake_openai_server.rb`) — a real local
   HTTP server (Puma hosting a Rack app, no new dependency) serving scripted
-  tool-call sequences. The agent's real Net::HTTP path runs end-to-end without
+  tool-call sequences; when the request asks for `stream: true` it serves real SSE
+  (events split mid-line into two chunks to exercise the client's line buffering,
+  content/arguments sliced so accumulation is observable). The agent's real Net::HTTP
+  path runs end-to-end without
   network; scripted responses can be computed from earlier tool results (exactly what
   a real model does). System tests cover generate → study the deck, API-failure UX
   and unconfigured UX. In tests the queue adapter is :inline (the system-test app

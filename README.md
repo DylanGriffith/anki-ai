@@ -141,6 +141,20 @@ and a check-in for approval before the next step.
       (unit + integration + system incl. two-user public-deck E2E). Screenshots:
       `step7_owner_deck_public`, `step7_browse_public_decks`, `step7_reading_public_deck`.
 
+- [x] **Step 8 — AI generation UX: streaming progress + compact transcript.** The
+      agent's chat requests now use `stream: true`: `Ai::Client` parses SSE over
+      chunked `Net::HTTP` reads (line buffering, `[DONE]`, tool-call fragment merge by
+      index; plain-completion fallback if a server ignores `stream`) and calls back
+      with accumulating state. The agent journals it via
+      `Ai::Generation#log_stream!` — one in-progress entry replaced in place,
+      throttled to 1 write/sec — so the polling status page shows live progress
+      instead of one burst at the end; the final `log_assistant!` entry replaces the
+      placeholder. Transcript is compact: collapsed `<details>` rows (role/tool name
+      in the summary — tool names and error markers stay readable; text/arguments/
+      result JSON inside), auto-scrolled to the bottom on every render. Status dot in
+      the header: orange in progress, green done, red failed. No new gems, no
+      frameworks — plain HTML/JS.
+
 ## Non-goals (for now)
 
 - No registration flow (users created via rake task).

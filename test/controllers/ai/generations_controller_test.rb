@@ -56,12 +56,21 @@ class Ai::GenerationsControllerTest < ActionDispatch::IntegrationTest
   test "show renders the transcript and links the deck" do
     generation = Ai::Generation.create!(user: @user, model: "fake-mini", prompt: "test")
     generation.log!(type: "assistant", text: "Building…")
+    generation.log!(type: "tool", name: "add_note", arguments: { note_type: "Basic" },
+                    result: { note_id: 1 }, error: false)
     deck = @user.decks.create!(name: "Shown")
     generation.update!(status: :done, deck: deck)
 
     get ai_generation_url(generation)
     assert_response :success
     assert_text "Building…"
+    # Compact transcript: one collapsed row per entry, tool name in the summary
+    assert_select "details.transcript-entry", count: 2
+    assert_select "details.transcript-entry[open]", count: 0
+    assert_select "details.transcript-entry--tool summary", text: "add_note"
+    # Green dot for done, and the auto-scroll script (but no polling)
+    assert_select ".status-dot.status-dot--done", count: 1
+    assert_match(/scrollTop = box\.scrollHeight/, @response.body)
     assert_match(/Open deck/, @response.body)
     assert_no_match(/setTimeout/, @response.body) # done: no polling script
   end
@@ -69,9 +78,23 @@ class Ai::GenerationsControllerTest < ActionDispatch::IntegrationTest
   test "show polls while running" do
     generation = Ai::Generation.create!(user: @user, model: "fake-mini", prompt: "test")
     generation.update!(status: :running)
+    generation.log_stream!(text: "Buil", tool_calls: [ { id: "call_1", name: "create_deck" } ])
     get ai_generation_url(generation)
     assert_response :success
+    assert_select ".status-dot.status-dot--running", count: 1
+    # The in-progress assistant entry shows what's streaming so far
+    assert_select "details.transcript-entry--assistant summary", text: /thinking…/
+    assert_select "details.transcript-entry--assistant summary", text: /create_deck/
     assert_match(/setTimeout/, @response.body)
+  end
+
+  test "show marks failed generations with a red dot and the error" do
+    generation = Ai::Generation.create!(user: @user, model: "fake-mini", prompt: "test")
+    generation.update!(status: :failed, error: "connection refused")
+    get ai_generation_url(generation)
+    assert_response :success
+    assert_select ".status-dot.status-dot--failed", count: 1
+    assert_match(/Generation failed/, @response.body)
   end
 
   test "generations are only visible to their owner" do

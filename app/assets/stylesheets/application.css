@@ -165,13 +165,40 @@ label.inline { display: inline; margin: 0; font-weight: 400; }
 .cloze { font-weight: 700; }
 .hint summary { color: var(--accent); cursor: pointer; }
 
-/* AI generation transcript (step 6) */
-.transcript { display: flex; flex-direction: column; gap: 8px; max-height: 26rem; overflow-y: auto; }
-.transcript-entry { border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; }
+/* AI generation transcript: compact <details> rows, collapsed by default.
+   The summary carries the role/tool name; the body holds text or JSON. */
+.transcript { display: flex; flex-direction: column; gap: 6px; max-height: 26rem; overflow-y: auto; }
+.transcript-entry { border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; }
 .transcript-entry--assistant { background: #f6f8fa; }
 .transcript-entry--tool pre { margin: 4px 0 0; white-space: pre-wrap; font-size: 0.8rem; }
 .transcript-entry--error { border-color: var(--danger); }
-.transcript-role { display: block; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-bottom: 2px; }
+.transcript-entry summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  font-size: 0.8rem;
+}
+.transcript-entry summary::-webkit-details-marker { display: none; }
+.transcript-entry summary::before { content: "▸"; color: var(--muted); font-size: 0.7rem; }
+.transcript-entry[open] summary::before { content: "▾"; }
+.transcript-entry--assistant > div { margin-top: 4px; }
+/* Status dot in the generation page header: orange = in progress,
+   green = done, red = failed */
+.status-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--border);
+  margin-right: 4px;
+  vertical-align: middle;
+}
+.status-dot--running, .status-dot--pending { background: #f39c12; }
+.status-dot--done { background: #1e7d32; }
+.status-dot--failed { background: var(--danger); }
 /* Deck form: paired numeric fields (limits) */
 .field-pair { display: flex; gap: 12px; }
 .field-pair > div { flex: 1; }

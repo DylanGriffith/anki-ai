@@ -1,6 +1,7 @@
 <div class="page-header">
   <h1>AI deck generation</h1>
-  <span class="deck-meta">
+  <span class="generation-status">
+    <span class="status-dot status-dot--<%= status_tone %>" title="<%= @generation.status %>"></span>
     <%= @generation.status %> · <%= @generation.model %>
     <% if @generation.turn_count.positive? %>
       · turn <%= @generation.turn_count %>
@@ -33,21 +34,29 @@
 
 <div class="card transcript">
   <% @generation.journal.each_with_index do |entry, i| %>
-    <% case entry["type"] when "assistant" %>
-      <div class="transcript-entry transcript-entry--assistant">
-        <span class="transcript-role">assistant</span>
+    <% case entry["type"]
+       when "assistant" %>
+      <%# Collapsed by default: just the role in the summary %>
+      <details class="transcript-entry transcript-entry--assistant">
+        <summary>
+          assistant<% if entry["streaming"] %> <span class="muted">thinking…</span><% end %>
+          <% if entry["tool_calls"].present? %>
+            <span class="muted">→ <%= entry["tool_calls"].map { |c| c.is_a?(String) ? c : c["name"] }.compact.join(", ") %></span>
+          <% end %>
+        </summary>
         <% if entry["text"].present? %>
           <div><%= entry["text"] %></div>
         <% end %>
-        <% if entry["tool_calls"] %>
-          <div class="muted">→ <%= entry["tool_calls"].join(", ") %></div>
-        <% end %>
-      </div>
+      </details>
     <% when "tool" %>
-      <div class="transcript-entry transcript-entry--tool <%= entry["error"] ? "transcript-entry--error" : "" %>">
-        <span class="transcript-role"><%= entry["name"] %></span>
+      <%# Collapsed by default: just the tool name (plus an error marker) %>
+      <details class="transcript-entry transcript-entry--tool <%= entry["error"] ? "transcript-entry--error" : "" %>">
+        <summary><%= entry["name"] %><% if entry["error"] %> ✗<% end %></summary>
+        <div class="muted">arguments</div>
+        <pre><%= JSON.pretty_generate(entry["arguments"]) %></pre>
+        <div class="muted">result</div>
         <pre><%= JSON.pretty_generate(entry["result"]) %></pre>
-      </div>
+      </details>
     <% else %>
       <div class="transcript-entry transcript-entry--status">
         <span class="muted">· <%= [ entry["text"], entry["summary"], entry["deck"], entry["error"] ].compact.join(" — ") %></span>
@@ -63,12 +72,15 @@
   <%= link_to "Back to decks", decks_path, class: "btn btn--secondary" %>
 </div>
 
-<%# Poll while the agent runs: a plain Turbo replace-visit, no frameworks. %>
-<% if @generation.pending? || @generation.running? %>
-  <script>
+<script>
+  // Keep the newest entry in view while the transcript grows.
+  const box = document.querySelector(".transcript")
+  if (box) box.scrollTop = box.scrollHeight
+  <% if @generation.pending? || @generation.running? %>
+    // Poll: a plain Turbo replace-visit, no frameworks, no websocket.
     setTimeout(() => {
       if (window.Turbo) { Turbo.visit(window.location.href, { action: "replace" }) }
       else { window.location.reload() }
     }, 2000)
-  </script>
-<% end %>
+  <% end %>
+</script>

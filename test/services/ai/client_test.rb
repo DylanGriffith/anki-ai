@@ -71,6 +71,43 @@ class Ai::ClientTest < ActiveSupport::TestCase
     assert_match(/could not reach the API/, error.message)
   end
 
+  test "chat with on_delta streams content and tool calls as they accumulate" do
+    @server.chat_response(content: "Building your deck", tool_calls: [
+      { name: "create_deck", arguments: { name: "French", description: "verbs" } }
+    ])
+    states = []
+    reply = @client.chat(model: "fake-mini", messages: [], tools: [ { type: "function", function: { name: "x" } } ],
+                         on_delta: ->(state) { states << state })
+
+    # Deltas arrived incrementally: the last accumulated state is the full text
+    assert states.length > 1
+    assert_equal "Building your deck", states.last[:content]
+    assert states.first[:content].length < "Building your deck".length
+    # Tool call names appear in the accumulated state once the header delta lands
+    assert_includes states.map { |s| s.dig(:tool_calls, 0, :name) }.compact, "create_deck"
+
+    # The final result matches the non-streaming shape
+    assert_equal "Building your deck", reply[:content]
+    call = reply[:tool_calls].first
+    assert_equal "create_deck", call[:name]
+    assert_equal({ "name" => "French", "description" => "verbs" }, call[:arguments])
+
+    # The request actually asked to stream
+    assert_equal true, @server.last_chat_request[:body]["stream"]
+  end
+
+  test "streaming falls back to a plain completion when the server ignores stream" do
+    @server.instance_variable_set(:@streaming, false)
+    @server.chat_response(content: "hello", tool_calls: [
+      { name: "finish", arguments: { summary: "x" } }
+    ])
+
+    reply = @client.chat(model: "fake-mini", messages: [], on_delta: ->(state) { flunk("no deltas expected") })
+
+    assert_equal "hello", reply[:content]
+    assert_equal "finish", reply[:tool_calls].first[:name]
+  end
+
   test "base urls tolerate trailing slashes and require a scheme" do
     client = Ai::Client.new(base_url: @server.url + "/", api_key: "k")
     assert_equal %w[fake-mini fake-pro], client.models

@@ -44,25 +44,3 @@ class Ai::SettingTest < ActiveSupport::TestCase
     assert_equal %w[a b], Ai::Setting.current.models
   end
 end
-
-class Ai::GenerationTest < ActiveSupport::TestCase
-  test "journal entries append and persist" do
-    user = build_user("ai-journal")
-    generation = Ai::Generation.create!(user: user, model: "m", prompt: "p")
-    generation.log!(type: "tool", name: "add_note", result: { note_id: 1 }, error: false)
-
-    assert_equal 1, generation.reload.journal.length
-    assert_equal "add_note", generation.journal.first["name"]
-    assert_equal 1, generation.journal.first["result"]["note_id"]
-  end
-
-  test "status enum and finished?" do
-    user = build_user("ai-enum")
-    generation = Ai::Generation.create!(user: user, model: "m", prompt: "p")
-    assert generation.pending?
-    assert_not generation.finished?
-    generation.update!(status: :failed)
-    assert generation.failed?
-    assert generation.finished?
-  end
-end

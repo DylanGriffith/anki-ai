@@ -3,6 +3,8 @@ module Ai
     before_action :require_login
     before_action :require_ai_config
 
+    helper_method :status_tone
+
     def new
       @models = fetch_models
       @generation = current_user.ai_generations.new
@@ -25,6 +27,15 @@ module Ai
     end
 
     private
+
+    # Color for the status dot on the generation page: orange while work is
+    # in flight, green when done, red when failed.
+    def status_tone
+      return "done" if @generation.done?
+      return "failed" if @generation.failed?
+
+      "running"
+    end
 
     # The button only appears in the UI when configured; this guard keeps
     # direct URLs honest too.
