@@ -33,5 +33,9 @@ class MediaFile < ApplicationRecord
                                              service_name: :local) # mirror has_one_attached service:
     end
     file.attach(blob.signed_id)
+    # attach() defers writing the active_storage_attachments row while the
+    # record is dirty (it is — byte_size above). Without this save, the blob
+    # exists but nothing links it to the record, and serving 404/500s.
+    save!
   end
 end
