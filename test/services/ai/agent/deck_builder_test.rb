@@ -67,7 +67,7 @@ class Ai::Agent::DeckBuilderTest < ActiveSupport::TestCase
     assert_includes first_request[:body]["messages"].first["content"], "flashcard deck builder"
     assert_includes first_request[:auth], "Bearer fake-key"
     tool_names = first_request[:body]["tools"].map { |t| t.dig("function", "name") }
-    assert_equal %w[create_deck upsert_note_type add_note update_note delete_note list_notes finish],
+    assert_equal %w[create_deck upsert_note_type add_note update_note delete_note list_notes search_notes finish],
                  tool_names
   end
 

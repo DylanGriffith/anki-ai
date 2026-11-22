@@ -16,11 +16,12 @@ module Ai
       end
 
       def workflow_prompt
-        "Workflow: list_notes to see the deck's existing note types and cards, then " \
-          "add_note for each new card (upsert_note_type if the deck needs another note " \
-          "type). Use update_note/delete_note to fix problems. Call finish when done. " \
-          "Keep new cards consistent with the deck's existing style and do not duplicate " \
-          "cards it already has."
+        "Workflow: list_notes to see the deck's existing note types and cards (first 50), " \
+          "search_notes to check whether a card already exists, then add_note for each new " \
+          "card (upsert_note_type if the deck needs another note type). Use " \
+          "update_note/delete_note to fix problems. Call finish when done. Keep new cards " \
+          "consistent with the deck's existing style and do not duplicate cards it already " \
+          "has."
       end
 
       private
@@ -39,8 +40,9 @@ module Ai
           fields = note.fields.map { |v| v.to_s.truncate(SAMPLE_FIELD_MAX) }.join(" | ")
           "  - (#{note.note_type.name}) #{fields}"
         end.join("\n")
-        "Examples of the deck's existing cards (#{total} in total — list_notes shows " \
-          "all of them). Match their style; do not write cards that duplicate them:\n#{sample}"
+        "Examples of the deck's existing cards (#{total} in total — list_notes shows the " \
+          "first 50, search_notes finds any text). Match their style; do not write cards " \
+          "that duplicate them:\n#{sample}"
       end
     end
   end

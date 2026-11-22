@@ -48,7 +48,7 @@ class Ai::Agent::CardAdderTest < ActiveSupport::TestCase
     assert_includes system_message, "German Numbers"
     assert_includes system_message, "Target about 3 cards"
     tool_names = first_request[:body]["tools"].map { |t| t.dig("function", "name") }
-    assert_equal %w[upsert_note_type add_note update_note delete_note list_notes finish], tool_names
+    assert_equal %w[upsert_note_type add_note update_note delete_note list_notes search_notes finish], tool_names
   end
 
   test "the system prompt is seeded with a sample of the deck's existing cards" do
@@ -73,6 +73,53 @@ class Ai::Agent::CardAdderTest < ActiveSupport::TestCase
 
     system_message = @server.chat_requests.first[:body]["messages"].first["content"]
     assert_not_includes system_message, "Examples of the deck's existing cards"
+  end
+
+  test "list_notes caps at 50 notes and points at search_notes" do
+    59.times { |i| @deck.notes.create!(note_type: @note_type, fields: [ "word#{i}", "def#{i}" ], guid: "g#{i}") }
+    @server.chat_response(tool_calls: [ { name: "list_notes" } ])
+    @server.chat_response(tool_calls: [ { name: "finish", arguments: { summary: "x" } } ])
+
+    build_generation(card_limit: 1)
+    Ai::Agent::CardAdder.new(Ai::Generation.last).call
+
+    result = @server.tool_results.first
+    assert_equal 60, result["total_notes"]
+    assert_equal 50, result["notes"].length
+    assert_includes result["notice"], "search_notes"
+  end
+
+  test "search_notes finds text case-insensitively across fields and tags" do
+    tagged = @deck.notes.create!(note_type: @note_type, fields: %w[ Mitosis Cell\ division ], guid: "tg",
+                                 tags: "Biology::Cell")
+    @server.chat_response(tool_calls: [ { name: "search_notes", arguments: { query: "MITOSIS" } } ])
+    @server.chat_response(tool_calls: [ { name: "search_notes", arguments: { query: "biology" } } ])
+    @server.chat_response(tool_calls: [ { name: "finish", arguments: { summary: "x" } } ])
+
+    build_generation(card_limit: 1)
+    Ai::Agent::CardAdder.new(Ai::Generation.last).call
+
+    by_field, by_tag = @server.tool_results.first(2)
+    assert_equal 1, by_field["matches"]
+    assert_equal [ tagged.id ], by_field["notes"].map { |n| n["note_id"] }
+    assert_equal [ tagged.id ], by_tag["notes"].map { |n| n["note_id"] }
+  end
+
+  test "search_notes caps at 25 matches and complains about an empty query" do
+    26.times { |i| @deck.notes.create!(note_type: @note_type, fields: [ "kapitel-5-#{i}", "" ], guid: "k#{i}") }
+    @server.chat_response(tool_calls: [ { name: "search_notes", arguments: { query: "kapitel-5" } } ])
+    @server.chat_response(tool_calls: [ { name: "search_notes", arguments: { query: "   " } } ])
+    @server.chat_response(tool_calls: [ { name: "finish", arguments: { summary: "x" } } ])
+
+    build_generation(card_limit: 1)
+    result = Ai::Agent::CardAdder.new(Ai::Generation.last).call
+    assert_equal :done, result
+
+    capped, blank = @server.tool_results.first(2)
+    assert_equal 26, capped["matches"]
+    assert_equal 25, capped["notes"].length
+    assert_includes capped["notice"], "more specific"
+    assert_includes blank["error"], "query is required"
   end
 
   test "card insert mode append puts new cards at the back of the queue" do

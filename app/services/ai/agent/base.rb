@@ -112,8 +112,26 @@ module Ai
           type: "function",
           function: {
             name: "list_notes",
-            description: "List the deck's notes (id, note type, fields, tags) to review what you built.",
+            description: "List the deck's first notes (up to 50: id, note type, fields, tags) " \
+                         "to review what you built. Use search_notes to find specific " \
+                         "content beyond the first 50.",
             parameters: { type: "object", properties: {} }
+          }
+        },
+        "search_notes" => {
+          type: "function",
+          function: {
+            name: "search_notes",
+            description: "Search the deck's notes for a text snippet (case-insensitive, " \
+                         "fields and tags) — e.g. to check whether a card already exists " \
+                         "before adding it. Returns up to 25 matches.",
+            parameters: {
+              type: "object",
+              properties: {
+                query: { type: "string", description: "Text to search for, e.g. 'mitose' or 'Biology::Cell'." }
+              },
+              required: %w[query]
+            }
           }
         },
         "finish" => {
@@ -130,7 +148,7 @@ module Ai
           }
         }
       }.freeze
-      TOOL_ORDER = %w[create_deck upsert_note_type add_note update_note delete_note list_notes finish].freeze
+      TOOL_ORDER = %w[create_deck upsert_note_type add_note update_note delete_note list_notes search_notes finish].freeze
 
       # Card-writing rules shared by both modes; mode prompts are composed
       # from these blocks.
@@ -230,7 +248,7 @@ module Ai
       end
 
       def offered_tools
-        %w[upsert_note_type add_note update_note delete_note list_notes finish]
+        %w[upsert_note_type add_note update_note delete_note list_notes search_notes finish]
       end
 
       def role_prompt
@@ -304,6 +322,7 @@ module Ai
         when "update_note"     then update_note(args)
         when "delete_note"     then delete_note(args)
         when "list_notes"      then list_notes
+        when "search_notes"    then search_notes(args)
         when "finish"          then finish(args)
         else                        [ { error: "unknown tool #{name.inspect}" }, true ]
         end
@@ -373,12 +392,52 @@ module Ai
         [ { deleted: note.id }, false ]
       end
 
+      # Caps that keep tool results (and the model's context) bounded even
+      # on decks with tens of thousands of cards.
+      LIST_NOTES_LIMIT = 50
+      SEARCH_NOTES_LIMIT = 25
+
       def list_notes
         require_deck!
-        [ { notes: @deck.notes.order(:id).map do |note|
-          { note_id: note.id, note_type: note.note_type.name,
-            fields: note.fields, tags: note.tags_list }
-        end }, false ]
+        total = @deck.notes.count
+        result = { notes: notes_payload(@deck.notes.order(:id).limit(LIST_NOTES_LIMIT)),
+                   total_notes: total }
+        if total > LIST_NOTES_LIMIT
+          result[:notice] = "showing the first #{LIST_NOTES_LIMIT} of #{total} notes — " \
+                            "use search_notes to find specific content"
+        end
+        [ result, false ]
+      end
+
+      # Case-insensitive substring search over fields (JSON) and tags — the
+      # bounded way to check a big deck for near-duplicates, since list_notes
+      # only shows the first 50 notes.
+      def search_notes(args)
+        require_deck!
+        query = args.fetch("query", "").to_s.strip
+        return [ { error: "query is required" }, true ] if query.empty?
+
+        pattern = "%#{query.gsub(/[\\%_]/) { |ch| "\\#{ch}" }}%"
+        scope = @deck.notes
+                    .where("fields LIKE :p ESCAPE '\\' OR tags LIKE :p ESCAPE '\\'", p: pattern)
+                    .order(:id)
+        total = scope.count
+        result = { query: query, notes: notes_payload(scope.limit(SEARCH_NOTES_LIMIT)),
+                   matches: total }
+        if total > SEARCH_NOTES_LIMIT
+          result[:notice] = "showing the first #{SEARCH_NOTES_LIMIT} of #{total} matches — " \
+                            "make the query more specific"
+        end
+        [ result, false ]
+      end
+
+      def note_payload(note)
+        { note_id: note.id, note_type: note.note_type.name,
+          fields: note.fields, tags: note.tags_list }
+      end
+
+      def notes_payload(scope)
+        scope.map { |note| note_payload(note) }
       end
 
       def finish(args)
