@@ -43,6 +43,32 @@ class Ai::GenerationsControllerTest < ActionDispatch::IntegrationTest
     generation = Ai::Generation.last
     assert generation.done?
     assert_equal "Web Deck", generation.deck.name
+    # The chosen model is remembered globally for the next form
+    assert_equal "fake-mini", Ai::Setting.current.last_model
+  end
+
+  test "new preselects the model remembered from the last creation" do
+    @server.chat_response(tool_calls: [ { name: "create_deck", arguments: { name: "Deck" } } ])
+    @server.chat_response(tool_calls: [ { name: "finish", arguments: { summary: "built" } } ])
+    post ai_generations_url, params: { prompt: "tiny deck", model: "fake-pro" }
+    assert_redirected_to ai_generation_path(Ai::Generation.last)
+
+    get new_ai_generation_url
+    assert_response :success
+    assert_select "option[value=fake-pro][selected]", text: "fake-pro"
+    assert_select "option[value=fake-mini][selected]", count: 0
+  end
+
+  test "a remembered model that is no longer in the list falls back to the first" do
+    Ai::Setting.current.update!(last_model: "deleted-model")
+    get new_ai_generation_url
+    assert_select "option[value=fake-mini][selected]", text: "fake-mini"
+  end
+
+  test "the free-text fallback preselects the remembered model" do
+    Ai::Setting.current.update!(base_url: "http://127.0.0.1:1", api_key: "k", last_model: "my-model")
+    get new_ai_generation_url
+    assert_select "input#model[value=my-model]"
   end
 
   test "create without a prompt bounces back with an error" do

@@ -14,10 +14,10 @@
 
   <% if @models.any? %>
     <%= label_tag :model, "Model" %>
-    <%= select_tag :model, options_for_select(@models, @models.first) %>
+    <%= select_tag :model, options_for_select(@models, @selected_model) %>
   <% else %>
     <%= label_tag :model, "Model (API model list unavailable — enter the model id)" %>
-    <%= text_field_tag :model, nil, required: true, placeholder: "gpt-4o-mini" %>
+    <%= text_field_tag :model, @selected_model, required: true, placeholder: "gpt-4o-mini" %>
   <% end %>
 
   <%= submit_tag "Generate deck" %>

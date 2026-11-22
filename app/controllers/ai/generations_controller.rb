@@ -6,8 +6,18 @@ module Ai
     helper_method :status_tone
 
     def new
+      setting = Ai::Setting.current
       @models = fetch_models
       @generation = current_user.ai_generations.new
+      # Preselect the model used on the last creation (remembered globally
+      # on the settings row); fall back to the first model when there is no
+      # memory or it is no longer in the fetched list.
+      @selected_model =
+        if @models.any?
+          setting.last_model.presence_in(@models) || @models.first
+        else
+          setting.last_model
+        end
     end
 
     def create
@@ -15,6 +25,8 @@ module Ai
         model: params[:model].to_s.strip, prompt: params[:prompt].to_s.strip
       )
       if @generation.save
+        # Global "what was selected last time" memory for the form.
+        Ai::Setting.current.update!(last_model: @generation.model)
         Ai::GenerationJob.perform_later(@generation.id)
         redirect_to ai_generation_path(@generation), notice: "AI deck generation started."
       else
