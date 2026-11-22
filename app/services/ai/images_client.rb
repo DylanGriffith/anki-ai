@@ -30,7 +30,8 @@ module Ai
     def generate(prompt:, model: DEFAULT_MODEL, size: DEFAULT_SIZE, quality: DEFAULT_QUALITY)
       body = { model: model, prompt: prompt.to_s.strip.truncate(PROMPT_MAX),
                size: size, quality: quality }
-      data = request(body)
+      @path = "images/generations"
+      data = request(JSON.generate(body))
       item = Array(data["data"]).first
       raise Error, "images API returned no image data" if item.nil?
 
@@ -44,19 +45,49 @@ module Ai
       end
     end
 
+    # Edit an existing image: POST /images/edits with multipart form data
+    # (the only content type that endpoint accepts). Returns the same shape
+    # as generate. +size+ must match the source image's dimensions or the
+    # returned canvas differs and pixel-diffing yields garbage.
+    def edit(prompt:, image_bytes:, model: DEFAULT_MODEL, size: DEFAULT_SIZE)
+      boundary = "----ankiimages#{SecureRandom.hex(8)}"
+      parts = +"".b
+      { "model" => model, "prompt" => prompt.to_s.strip.truncate(PROMPT_MAX),
+        "size" => size, "n" => "1" }.each do |name, value|
+        parts << %(--#{boundary}\r\nContent-Disposition: form-data; name="#{name}"\r\n\r\n#{value}\r\n).b
+      end
+      parts << %(--#{boundary}\r\nContent-Disposition: form-data; name="image"; ) +
+                %(filename="image.png"\r\nContent-Type: image/png\r\n\r\n)
+      body = parts << image_bytes.to_s.b << "\r\n--#{boundary}--\r\n"
+
+      @path = "images/edits"
+      data = request(body, content_type: "multipart/form-data; boundary=#{boundary}")
+      item = Array(data["data"]).first
+      raise Error, "images API returned no image data" if item.nil?
+
+      if item["b64_json"].present?
+        { prompt: prompt.to_s, size: size, bytes: item["b64_json"].unpack1("m"),
+          content_type: "image/png" }
+      elsif (url = item["url"]).present?
+        download(url).merge(prompt: prompt.to_s, size: size)
+      else
+        raise Error, "images edits API response has neither b64_json nor url"
+      end
+    end
+
     private
 
-    def request(body)
+    def request(body, content_type: "application/json")
       # Same RFC-3986 merge trap the chat client avoids: URI.join on a base
       # without a trailing slash would drop its last segment ("/v1"), so
       # append one before joining.
-      uri = URI.join(@base.to_s + "/", "images/generations")
+      uri = URI.join(@base.to_s + "/", @path)
       http = Net::HTTP.new(uri.host, uri.port)
       http.use_ssl = (uri.scheme == "https")
       http.open_timeout = OPEN_TIMEOUT
       http.read_timeout = READ_TIMEOUT
-      response = http.post(uri, JSON.generate(body),
-                           "Content-Type" => "application/json",
+      response = http.post(uri, body,
+                           "Content-Type" => content_type,
                            "Accept" => "application/json",
                            "Authorization" => "Bearer #{@api_key}")
       parse(response)

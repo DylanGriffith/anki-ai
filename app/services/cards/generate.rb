@@ -19,12 +19,24 @@ module Cards
 
     def self.card_ords(note)
       note_type = note.note_type
-      if note_type.cloze?
+      if note_type.occlusion?
+        occlusion_ords(note).then { |ords| ords.empty? ? [ 0 ] : ords }
+      elsif note_type.cloze?
         numbers = note.fields.join.scan(/\{\{c(\d+)::/).map { |m| m[0].to_i }.uniq.sort
         numbers.take(note_type.templates.size)
       else
         templates_satisfied(note)
       end
+    end
+
+    # One card per derived mask: the front covers mask N, the answer reveals
+    # it. Notes whose image has no masks fall back to a single plain card.
+    def self.occlusion_ords(note)
+      image = note.field("Image").to_s
+      filename = image[/src=["']([^"']+)["']/, 1]
+      media = filename && note.deck.media_files.find_by(filename: filename.strip)
+      count = Array(media&.masks).length
+      (0...count).to_a
     end
 
     def self.templates_satisfied(note)

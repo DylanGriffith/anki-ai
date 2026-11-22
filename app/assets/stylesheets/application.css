@@ -220,3 +220,20 @@ label.inline { display: inline; margin: 0; font-weight: 400; }
 /* Deck form: paired numeric fields (limits) */
 .field-pair { display: flex; gap: 12px; }
 .field-pair > div { flex: 1; }
+/* Image occlusion (AI-generated labeled diagrams): a relative wrapper holds
+   the image and the mask rectangle positioned as % of the image dimensions */
+.occl-wrap {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+}
+.occl-wrap img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+.occl-mask {
+  position: absolute;
+  background: #3355aa;
+  border-radius: 2px;
+}

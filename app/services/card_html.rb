@@ -28,7 +28,26 @@ class CardHtml
 
     source = side == :question ? template["front"] : template["back"]
     raw = Anki::Template.render(source, side: side, fields: fields, context: context)
-    rewrite_media(sanitize(raw), media_url).html_safe
+    html = sanitize(raw)
+    html = occlusion_mask(html, card) if note_type.occlusion? && side == :question
+    rewrite_media(html, media_url).html_safe
+  end
+
+  # Occlusion cards: the question side wraps the labeled image and covers one
+  # label rectangle (the card's mask), which the answer side reveals. The
+  # markup is server-generated after sanitization, so its inline styles
+  # (positions in % of the image dimensions) are safe by construction.
+  def self.occlusion_mask(html, card)
+    html.gsub(/<img\b[^>]*\bsrc=["']([^"']+)["'][^>]*>/i) do |img|
+      media = card.deck.media_files.find_by(filename: Regexp.last_match(1).strip)
+      masks = Array(media&.masks)
+      next img if masks.empty?
+      m = masks[card.template_ord % masks.size] || masks.first
+      box = %(<span class="occl-mask" style="left:#{(m["x"].to_f * 100)}%;) +
+            %(top:#{(m["y"].to_f * 100)}%;width:#{(m["w"].to_f * 100)}%;) +
+            %(height:#{(m["h"].to_f * 100)}%"></span>)
+      %(<span class="occl-wrap">#{img}#{box}</span>)
+    end
   end
 
   # Note-type CSS, lightly scrubbed (CSS cannot execute scripts; this just

@@ -19,8 +19,20 @@ class FakeOpenAIServer
 
     def call(env)
       body = env["rack.input"].read
+      content_type = env["CONTENT_TYPE"].to_s
+      parsed =
+        if body.empty? || !content_type.include?("json")
+          body
+        else
+          begin
+            JSON.parse(body)
+          rescue JSON::ParserError
+            body
+          end
+        end
       @server.requests << { method: env["REQUEST_METHOD"], path: env["PATH_INFO"],
-                            auth: env["HTTP_AUTHORIZATION"], body: body.empty? ? nil : JSON.parse(body) }
+                            auth: env["HTTP_AUTHORIZATION"], content_type: content_type,
+                            body: parsed }
       case [ env["REQUEST_METHOD"], env["PATH_INFO"] ]
       in [ "GET", "/models" ]
         json(200, { object: "list", data: @server.models.map { |id| { id: id } } })
@@ -44,7 +56,13 @@ class FakeOpenAIServer
           return json(500, { error: { message: "images API down (scripted)" } })
         end
 
-        json(200, { data: [ { b64_json: TINY_PNG_B64 } ] })
+        json(200, { data: [ { b64_json: @server.generate_b64 || TINY_PNG_B64 } ] })
+      in [ "POST", %r{\A(?:/v1)?/images/edits\z} ]
+        if @server.images_fail?
+          return json(500, { error: { message: "images edits API down (scripted)" } })
+        end
+
+        json(200, { data: [ { b64_json: @server.edit_b64 || TINY_PNG_B64 } ] })
       else
         json(404, { error: { message: "no such endpoint" } })
       end
@@ -206,6 +224,10 @@ class FakeOpenAIServer
   def images_fail?
     !!@images_fail
   end
+
+  # Override what /images/generations and /images/edits return (e.g. a
+  # labeled diagram and its label-free twin for occlusion tests).
+  attr_accessor :generate_b64, :edit_b64
 
   def initialize(models: %w[fake-mini fake-pro], streaming: true)
     @models = models

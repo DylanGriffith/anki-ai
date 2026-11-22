@@ -74,7 +74,13 @@ module Ai
                 filename: { type: "string",
                             description: "Simple snake-case file name ending in .png/.jpg/.jpeg/.webp, e.g. 'neuron.png'." },
                 prompt: { type: "string",
-                          description: "What the image should show, e.g. 'Simple labeled diagram of a neuron: soma, dendrites, axon, myelin sheath, synapse. Clean flat style, no watermark'." }
+                          description: "What the image should show, e.g. 'Simple labeled diagram of a neuron: soma, dendrites, axon, myelin sheath, synapse. Clean flat style, no watermark'." },
+                occlusion: { type: "boolean",
+                             description: "true for labeled diagrams that should be studied by " \
+                                          "recalling what each label names ('labels of parts of a " \
+                                          "neuron'): auto-derives one mask per label, and " \
+                                          "generates one occlusion card per mask from a single " \
+                                          "occlusion note. Otherwise omit it." }
               },
               required: %w[filename prompt]
             }
@@ -310,7 +316,15 @@ module Ai
           "deck as a media file (at most #{IMAGES_PER_RUN} per run). Use it when cards " \
           "need a visual — anatomy, maps, circuits, labeled diagrams. Reference the " \
           "generated file in field values as <img src='filename.png'> (never remote or " \
-          "data URLs), and write cards around what the image shows."
+          "data URLs), and write cards around what the image shows.\n" \
+          "Occlusion: for labeled diagrams that should be studied by recalling what each " \
+          "label names (e.g. 'labels of parts of a neuron'), pass occlusion: true to " \
+          "generate_image, then create one occlusion note type (kind 'occlusion', fields " \
+          "['Image', 'Notes'], front template '{{Image}}', back template " \
+          "'{{Image}}<hr>{{Notes}}') and exactly ONE occlusion note whose Image field " \
+          "holds the <img>. The app derives one mask per label and generates one card " \
+          "per mask — the front covers one label, the answer reveals it. Do not add " \
+          "several notes for the same occlusion image."
       end
 
       def images_configured?
@@ -379,6 +393,12 @@ module Ai
       # images, never an unbounded gallery.
       IMAGES_PER_RUN = 4
       IMAGE_FILENAME = /\A[a-z0-9][a-z0-9_-]*\.(png|jpe?g|webp)\z/i
+      # The editing prompt that turns a labeled diagram into its label-free
+      # twin, so the pixel diff can localize every label.
+      OCCLUSION_UNLABEL_PROMPT = "Remove ALL text labels and their thin pointer lines " \
+                                 "from this diagram. Keep the drawing EXACTLY identical — " \
+                                 "same position, same shapes, same colors. Erase the text " \
+                                 "and pointer lines to the plain background."
 
       # Generates one image via the configured Images API and attaches it as
       # a deck media file; the model then embeds <img src="..."> in a field.
@@ -402,10 +422,10 @@ module Ai
         end
 
         setting = Setting.current
-        image = ImagesClient.new(base_url: setting.image_base_url,
-                                 api_key: setting.image_api_key)
-                            .generate(prompt: prompt,
-                                      model: setting.image_model.presence || ImagesClient::DEFAULT_MODEL)
+        client = ImagesClient.new(base_url: setting.image_base_url,
+                                  api_key: setting.image_api_key)
+        image = client.generate(prompt: prompt,
+                                model: setting.image_model.presence || ImagesClient::DEFAULT_MODEL)
 
         media = @deck.media_files.create!(
           filename: filename,
@@ -413,6 +433,9 @@ module Ai
         )
         begin
           attach_image_bytes(media, image[:bytes])
+          if args["occlusion"]
+            media.update!(masks: occlusion_masks(client, setting, image))
+          end
         rescue StandardError
           media.destroy!
           raise
@@ -420,8 +443,25 @@ module Ai
 
         @images_generated += 1
         @generation.log!(type: "status", text: "image generated", image: filename)
-        [ { media: filename, images_left: IMAGES_PER_RUN - @images_generated,
-            usage: %(<img src="#{filename}">) }, false ]
+        result = { media: filename, images_left: IMAGES_PER_RUN - @images_generated,
+                   usage: %(<img src="#{filename}">) }
+        if args["occlusion"]
+          result[:masks] = media.masks.size
+          result[:usage] += " — use an occlusion note type (kind 'occlusion'); one note " \
+                           "referencing this image generates one card per mask"
+        end
+        [ result, false ]
+      end
+
+      # The label-free twin is a throwaway: edit, diff, discard.
+      def occlusion_masks(client, setting, image)
+        clean = client.edit(prompt: OCCLUSION_UNLABEL_PROMPT,
+                            image_bytes: image[:bytes],
+                            model: setting.image_model.presence || ImagesClient::DEFAULT_MODEL,
+                            size: image[:size])
+        masks = Ai::PixelDiff.masks(labeled_bytes: image[:bytes], clean_bytes: clean[:bytes])
+        @generation.log!(type: "status", text: "occlusion masks derived", masks: masks.size)
+        masks
       end
 
       # MediaFile#attach_from uploads from a path; hand it a Tempfile.
@@ -438,7 +478,7 @@ module Ai
       def upsert_note_type(args)
         require_deck!
         name = args.fetch("name").to_s.strip
-        kind = args["kind"] == "cloze" ? :cloze : :standard
+        kind = %w[cloze occlusion].include?(args["kind"]) ? args["kind"].to_sym : :standard
         fields = Array(args.fetch("fields")).map(&:to_s)
         front = args.fetch("front_template").to_s
         back = args.fetch("back_template").to_s
@@ -567,7 +607,7 @@ module Ai
       # Which fields make a card generatable: fields the front template
       # actually shows (same shape Anki stores for 'req', but with names).
       def requirements_for(front, fields, kind)
-        return [ [ 0, "any", fields ] ] if kind == :cloze
+        return [ [ 0, "any", fields ] ] if kind == :cloze || kind == :occlusion
 
         shown = fields.select { |f| front.to_s.match?(/\{\{#{Regexp.escape(f)}\}\}/) }
         shown = [] if fields.empty?

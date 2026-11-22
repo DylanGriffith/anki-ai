@@ -47,6 +47,13 @@ works: OpenAI, OpenRouter, LM Studio, Ollama's compatibility layer, …
 AI deck generation runs as a Solid Queue job — run the worker with
 `SOLID_QUEUE_IN_PUMA=true bin/rails server` (single process) or `bin/jobs`.
 
+With the image API configured, the agent can also make image-occlusion cards
+("labels of parts of a neuron"): it generates a labeled diagram, edits the
+labels away through the Images API, and derives one mask per label from the
+pixel diff. One occlusion note then generates one card per mask — the front
+covers one label, the answer reveals it. Ask for occlusion explicitly, e.g.
+"a labeled neuron diagram studied as image occlusion".
+
 ## Test suite
 
 ```bash
