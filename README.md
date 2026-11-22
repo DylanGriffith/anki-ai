@@ -37,7 +37,7 @@ bin/rails "ai:config[base_url=https://api.openai.com/v1,api_key=sk-...]"
 bin/rails ai:models   # fetch + cache the model list for the UI dropdown
 
 # Optional — enables the agent's generate_image tool (cards with diagrams):
-bin/rails "ai:image_config[base_url=https://api.openai.com/v1,api_key=sk-...,model=gpt-image-2]"
+bin/rails "ai:image_config[base_url=https://api.openai.com/v1,api_key=sk-...,model=gpt-image-1-mini]"
 ```
 
 The base URL and API key are stored in the database (key encrypted at rest with a key

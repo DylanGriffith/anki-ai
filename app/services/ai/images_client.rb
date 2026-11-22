@@ -7,10 +7,11 @@ module Ai
   # Responses carry base64 image bytes (gpt-image models) or a URL (some
   # OpenAI-compatible servers) — both are handled.
   class ImagesClient
-    # Verified against the live API (Nov 2026 spike): gpt-image-2 at medium
-    # quality renders correctly-spelled diagram labels; the mini tier at low
-    # quality garbles text ("nucteus"), which would poison the cards.
-    DEFAULT_MODEL = "gpt-image-2"
+    # Verified against the live API (Nov 2026 spike): the mini tier renders
+    # correctly-spelled diagram labels at medium quality; at low quality it
+    # garbles text ("nucteus"), which would poison the cards. Medium costs
+    # roughly twice the low tier but is the floor for usable diagrams.
+    DEFAULT_MODEL = "gpt-image-1-mini"
     DEFAULT_SIZE = "1024x1024"
     DEFAULT_QUALITY = "medium"
 
