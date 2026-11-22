@@ -178,6 +178,9 @@ module Ai
         - The front asks a specific question the back answers directly.
         - Cloze notes use {{c1::…}} deletions in the Text field (kind: 'cloze').
         - No markdown in field values; plain text and simple HTML only.
+        - An <img> belongs in exactly ONE field of a note. The back template
+          already re-renders the front side, so repeating the same <img> in
+          the answer field shows the picture twice at full height.
       RULES
 
       DB_WARNING = <<~WARNING
