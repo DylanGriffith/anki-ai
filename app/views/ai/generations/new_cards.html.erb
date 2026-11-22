@@ -1,0 +1,14 @@
+<div class="page-header">
+  <h1>Add AI cards</h1>
+  <span class="deck-meta">to <%= @generation.deck.name %></span>
+</div>
+
+<p class="muted">
+  Describe what you want. The AI agent adds the cards to this deck in the
+  background; you can watch its progress on the next page.
+</p>
+
+<%= render "form",
+      url: deck_ai_cards_path(@generation.deck),
+      submit_label: "Add cards with AI",
+      cancel_path: deck_path(@generation.deck) %>

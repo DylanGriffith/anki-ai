@@ -4,6 +4,7 @@ require "application_system_test_case"
 # page → deck) against the scripted fake OpenAI server — the agent's real
 # HTTP client calls a real local server, no network, no API key.
 class AiDeckGenerationTest < ApplicationSystemTestCase
+  include StudySystemHelpers
   setup do
     @server = FakeOpenAIServer.start
     Ai::Setting.current.update!(base_url: @server.url, api_key: "fake-key")
@@ -135,5 +136,37 @@ class AiDeckGenerationTest < ApplicationSystemTestCase
     visit new_ai_generation_path
     assert_selector "h1", text: "Decks"
     assert_text "AI is not configured yet"
+  end
+
+  test "add cards to an existing deck with AI, up next in the study queue" do
+    deck = login_and_import # Study Test deck: hello/bonjour, dog/chien, water/l'eau
+
+    # What "the model" does: add two more French words to the existing deck
+    @server.chat_response(tool_calls: [
+      { name: "add_note", arguments: { note_type: "Basic", fields: [ "pain", "bread", "" ] } },
+      { name: "add_note", arguments: { note_type: "Basic", fields: [ "fromage", "cheese", "" ] } }
+    ])
+    @server.chat_response(tool_calls: [ { name: "finish", arguments: { summary: "2 foods" } } ])
+
+    visit deck_path(deck)
+    click_on "Add AI cards"
+    assert_selector "h1", text: "Add AI cards"
+    fill_in "What should the cards cover?", with: "Two French food words"
+    fill_in "card_limit", with: "2"
+    select "Add up next — they become my next new cards", from: "insert_mode"
+    click_submit("Add cards with AI")
+
+    # Inline job: the status page is already done, with the deck one hop away
+    assert_selector "h1", text: "AI card generation"
+    assert_text "done"
+    click_on "Open deck"
+    assert_selector "h1", text: "Study Test"
+    assert_text "5 cards"
+
+    # "Up next" means the AI cards are the first new cards in the queue,
+    # before every card the deck already had.
+    click_on "Study"
+    assert_text "pain"
+    evidence("add_cards_up_next_first")
   end
 end

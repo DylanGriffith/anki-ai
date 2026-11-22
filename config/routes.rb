@@ -17,9 +17,12 @@ Rails.application.routes.draw do
   post "sync", to: "sync#create"
 
   # AI deck generation: the form enqueues a job; the status page polls.
+  # The deck-scoped pair below is "add AI cards to an existing deck".
   namespace :ai do
     resources :generations, only: [ :new, :create, :show ]
   end
+  get  "decks/:deck_id/ai_cards/new", to: "ai/generations#new", as: :new_deck_ai_cards
+  post "decks/:deck_id/ai_cards", to: "ai/generations#create", as: :deck_ai_cards
 
   resources :decks, only: [ :index, :new, :create, :show, :edit, :update, :destroy ] do
     member do

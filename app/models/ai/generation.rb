@@ -15,11 +15,24 @@ module Ai
     belongs_to :deck, optional: true
 
     enum :status, { pending: 0, running: 1, done: 2, failed: 3 }
+    # create_deck: build a brand-new deck; add_cards: extend an existing deck
+    # (deck_id set up front) with at most card_limit new cards.
+    enum :mode, { create_deck: 0, add_cards: 1 }
+    # add_cards only: where the generated cards go in the new-card queue.
+    enum :insert_mode, { append: 0, up_next: 1 }, prefix: :inserted
 
     validates :model, presence: true
     validates :prompt, presence: true
+    validates :card_limit, numericality: { only_integer: true,
+                                           greater_than: 0, less_than_or_equal_to: 500 },
+                          allow_nil: true
+    validate :add_cards_needs_deck
 
     scope :recent_first, -> { order(created_at: :desc, id: :desc) }
+
+    def add_cards_needs_deck
+      errors.add(:deck, "is required to add cards") if add_cards? && deck.nil?
+    end
 
     # Append one journal entry and save. Entries are small hashes:
     #   { "type" => "assistant"|"tool"|"status", ... }

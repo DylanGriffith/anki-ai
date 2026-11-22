@@ -5,21 +5,8 @@
   in the background; you can watch its progress on the next page.
 </p>
 
-<%= form_with url: ai_generations_path, method: :post, data: { turbo: false },
-      class: "card card--narrow" do %>
-  <%= label_tag :prompt, "What should the deck cover?" %>
-  <%= text_area_tag :prompt, nil, rows: 4, required: true, autofocus: true,
-        placeholder: "e.g. French verbs for a beginner (A1): the 20 most common verbs, " \
-                     "French on the front, English on the back" %>
-
-  <% if @models.any? %>
-    <%= label_tag :model, "Model" %>
-    <%= select_tag :model, options_for_select(@models, @selected_model) %>
-  <% else %>
-    <%= label_tag :model, "Model (API model list unavailable — enter the model id)" %>
-    <%= text_field_tag :model, @selected_model, required: true, placeholder: "gpt-4o-mini" %>
-  <% end %>
-
-  <%= submit_tag "Generate deck" %>
-  <%= link_to "Cancel", decks_path, class: "btn btn--secondary" %>
-<% end %>
+<%= render "form",
+      url: ai_generations_path,
+      prompt_label: "What should the deck cover?",
+      submit_label: "Generate deck",
+      cancel_path: decks_path %>

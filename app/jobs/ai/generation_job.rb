@@ -10,7 +10,15 @@ module Ai
       return if generation.finished?
 
       generation.update!(status: :running)
-      Agent::DeckBuilder.new(generation).call
+      agent_class(generation).new(generation).call
+    end
+
+    private
+
+    # Both modes share the agent loop (Ai::Agent::Base); only the deck setup
+    # and the create_deck tool differ.
+    def agent_class(generation)
+      generation.add_cards? ? Agent::CardAdder : Agent::DeckBuilder
     end
   end
 end

@@ -8,7 +8,13 @@ module Ai
     def new
       setting = Ai::Setting.current
       @models = fetch_models
-      @generation = current_user.ai_generations.new
+      @generation = current_user.ai_generations.new(
+        mode: params[:deck_id] ? :add_cards : :create_deck,
+        card_limit: DEFAULT_CARD_LIMIT
+      )
+      if params[:deck_id]
+        @generation.deck = current_user.decks.find(params[:deck_id])
+      end
       # Preselect the model used on the last creation (remembered globally
       # on the settings row); fall back to the first model when there is no
       # memory or it is no longer in the fetched list.
@@ -18,19 +24,18 @@ module Ai
         else
           setting.last_model
         end
+      render :new_cards if @generation.add_cards?
     end
 
     def create
-      @generation = current_user.ai_generations.new(
-        model: params[:model].to_s.strip, prompt: params[:prompt].to_s.strip
-      )
+      @generation = current_user.ai_generations.new(generation_params)
       if @generation.save
         # Global "what was selected last time" memory for the form.
         Ai::Setting.current.update!(last_model: @generation.model)
         Ai::GenerationJob.perform_later(@generation.id)
-        redirect_to ai_generation_path(@generation), notice: "AI deck generation started."
+        redirect_to ai_generation_path(@generation), notice: "AI generation started."
       else
-        redirect_to new_ai_generation_path, alert: @generation.errors.full_messages.to_sentence
+        redirect_to new_path_for, alert: @generation.errors.full_messages.to_sentence
       end
     end
 
@@ -39,6 +44,31 @@ module Ai
     end
 
     private
+
+    # The forms ask for a card count; the agent stops at it no matter what.
+    DEFAULT_CARD_LIMIT = 20
+
+    # One param bag for both modes: a deck_id posts the "add cards to that
+    # deck" form (owner-only via current_user.decks), otherwise a new deck
+    # is built from scratch.
+    def generation_params
+      {
+        mode: params[:deck_id].present? ? :add_cards : :create_deck,
+        deck: params[:deck_id].present? ? current_user.decks.find(params[:deck_id]) : nil,
+        model: params[:model].to_s.strip,
+        prompt: params[:prompt].to_s.strip,
+        card_limit: params[:card_limit].present? ? params[:card_limit].to_i : DEFAULT_CARD_LIMIT,
+        insert_mode: params[:insert_mode] == "up_next" ? :up_next : :append
+      }
+    end
+
+    def new_path_for
+      if params[:deck_id]
+        new_deck_ai_cards_path(params[:deck_id])
+      else
+        new_ai_generation_path
+      end
+    end
 
     # Color for the status dot on the generation page: orange while work is
     # in flight, green when done, red when failed.

@@ -43,8 +43,61 @@ class Ai::GenerationsControllerTest < ActionDispatch::IntegrationTest
     generation = Ai::Generation.last
     assert generation.done?
     assert_equal "Web Deck", generation.deck.name
+    # The form defaults the card limit; it is stored on the generation
+    assert_equal 20, generation.card_limit
+    assert generation.inserted_append?
     # The chosen model is remembered globally for the next form
     assert_equal "fake-mini", Ai::Setting.current.last_model
+  end
+
+  test "create with a deck_id adds AI cards to the owner's deck" do
+    deck = @user.decks.create!(name: "Adder")
+    type = deck.note_types.create!(name: "Basic", field_names: %w[Front Back],
+                                   templates: [ { "name" => "Card 1", "front" => "{{Front}}",
+                                                  "back" => "{{FrontSide}}<hr>{{Back}}" } ],
+                                   card_requirements: [ [ 0, "any", %w[Front] ] ])
+    deck.notes.create!(note_type: type, fields: %w[one eins], guid: "g1")
+    @server.chat_response(tool_calls: [ { name: "add_note",
+                                         arguments: { note_type: "Basic", fields: %w[two zwei] } } ])
+    @server.chat_response(tool_calls: [ { name: "finish", arguments: { summary: "added" } } ])
+
+    assert_difference -> { @user.ai_generations.count }, 1 do
+      post deck_ai_cards_path(deck), params: { prompt: "numbers", model: "fake-pro",
+                                                card_limit: 5, insert_mode: "up_next" }
+    end
+    assert_redirected_to ai_generation_path(Ai::Generation.last)
+
+    generation = Ai::Generation.last
+    assert generation.done? # inline adapter ran the add-cards agent
+    assert_equal deck, generation.deck
+    assert generation.add_cards?
+    assert generation.inserted_up_next?
+    assert_equal 5, generation.card_limit
+    assert_equal 2, deck.notes.count
+    assert_equal "fake-pro", Ai::Setting.current.last_model
+  end
+
+  test "new with a deck_id renders the add-cards form with limit and insert mode" do
+    deck = @user.decks.create!(name: "Adder")
+    get new_deck_ai_cards_path(deck)
+    assert_response :success
+    assert_select "h1", text: "Add AI cards"
+    assert_select "input#card_limit[value=20]"
+    assert_select "select#insert_mode option[value=up_next]", text: /Add up next/
+  end
+
+  test "adding AI cards to another user's deck is not found" do
+    build_user("ai-other")
+    deck = User.find_by(name: "ai-other").decks.create!(name: "Theirs")
+    post login_path, params: { name: @user.name, password: "password123" }
+    assert_no_difference -> { Ai::Generation.count } do
+      get new_deck_ai_cards_path(deck)
+    end
+    assert_response :not_found
+    assert_no_difference -> { Ai::Generation.count } do
+      post deck_ai_cards_path(deck), params: { prompt: "x", model: "m" }
+    end
+    assert_response :not_found
   end
 
   test "new preselects the model remembered from the last creation" do

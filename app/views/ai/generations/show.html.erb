@@ -1,5 +1,5 @@
 <div class="page-header">
-  <h1>AI deck generation</h1>
+  <h1><%= @generation.create_deck? ? "AI deck generation" : "AI card generation" %></h1>
   <span class="generation-status" data-generation-status="<%= @generation.status %>">
     <span class="status-dot status-dot--<%= status_tone %>" title="<%= @generation.status %>"></span>
     <%= @generation.status %> · <%= @generation.model %>

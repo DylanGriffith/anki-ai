@@ -1,0 +1,33 @@
+<%# Shared form for both AI generation modes: new deck (url: ai_generations_path)
+    and add-cards-to-deck (url: deck_ai_cards_path(deck)); the insert-mode
+    field is only rendered when the generation targets an existing deck. %>
+<% prompt_label ||= "What should the cards cover?" %>
+<%= form_with url: url, method: :post, data: { turbo: false },
+      class: "card card--narrow" do %>
+  <%= label_tag :prompt, prompt_label %>
+  <%= text_area_tag :prompt, nil, rows: 4, required: true, autofocus: true,
+        placeholder: "e.g. French verbs for a beginner (A1): the 20 most common verbs, " \
+                     "French on the front, English on the back" %>
+
+  <% if @models.any? %>
+    <%= label_tag :model, "Model" %>
+    <%= select_tag :model, options_for_select(@models, @selected_model) %>
+  <% else %>
+    <%= label_tag :model, "Model (API model list unavailable — enter the model id)" %>
+    <%= text_field_tag :model, @selected_model, required: true, placeholder: "gpt-4o-mini" %>
+  <% end %>
+
+  <%= label_tag :card_limit, "Number of cards (the AI stops when it reaches this many)" %>
+  <%= number_field_tag :card_limit, @generation.card_limit || 20, min: 1, max: 500, required: true %>
+
+  <% if @generation.add_cards? %>
+    <%= label_tag :insert_mode, "Where do the new cards go?" %>
+    <%= select_tag :insert_mode, options_for_select(
+          [ [ "Add to back of the new-card queue", "append" ],
+            [ "Add up next — they become my next new cards", "up_next" ] ],
+          @generation.inserted_append? ? "append" : "up_next") %>
+  <% end %>
+
+  <%= submit_tag submit_label %>
+  <%= link_to "Cancel", cancel_path, class: "btn btn--secondary" %>
+<% end %>

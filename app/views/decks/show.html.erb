@@ -45,6 +45,9 @@
 <div class="actions">
   <% if @deck.editable_by?(current_user) %>
     <%= link_to "Add card", new_card_deck_path(@deck), class: "btn btn--secondary" %>
+    <% if Ai::Setting.current.configured? %>
+      <%= link_to "Add AI cards", new_deck_ai_cards_path(@deck), class: "btn btn--secondary" %>
+    <% end %>
     <%= link_to "Edit deck", edit_deck_path(@deck), class: "btn btn--secondary" %>
   <% end %>
   <%= link_to "Browse cards", cards_deck_path(@deck), class: "btn btn--secondary" %>
