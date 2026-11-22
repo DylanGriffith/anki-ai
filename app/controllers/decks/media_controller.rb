@@ -24,17 +24,25 @@ class Decks::MediaController < ApplicationController
       set_media_headers(media)
       self.response_body = RangeBody.new(path, start, finish)
     else
+      response.headers["Content-Length"] = size.to_s
       set_media_headers(media)
-      send_file path, filename: media.filename, type: media.content_type, disposition: :inline
+      self.response_body = RangeBody.new(path, 0, size - 1)
     end
   end
 
   private
 
+  # Download name for Content-Disposition: a bare base name (no path
+  # separators) with the characters that could break out of the
+  # quoted-string (quotes, backslashes, CR/LF) removed.
+  def safe_filename(media)
+    File.basename(media.filename.to_s).gsub(/["\\\r\n]/, "")
+  end
+
   def set_media_headers(media)
     response.headers["Content-Type"] = media.content_type
     response.headers["Content-Disposition"] =
-      %(inline; filename="#{media.filename.gsub(/["\\]/, "")}")
+      %(inline; filename=\"#{safe_filename(media)}\")
   end
 
   # Parses "bytes=2-5", "bytes=7-" and "bytes=-3" into [start, finish].

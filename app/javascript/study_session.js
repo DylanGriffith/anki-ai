@@ -23,7 +23,12 @@ function boot() {
   if (!dataEl || !root || root.dataset.booted) return
   root.dataset.booted = "1"
   try {
-    const session = new StudySession(root, JSON.parse(dataEl.textContent))
+    const data = JSON.parse(dataEl.textContent)
+    // Note-type CSS comes from user-controlled decks; injecting via
+    // textContent (never innerHTML) keeps it from breaking out of the tag.
+    const styleEl = document.getElementById("study-card-css")
+    if (styleEl) styleEl.textContent = data.css || ""
+    const session = new StudySession(root, data)
     session.start().catch((error) => window.__studyErrors.push(`start: ${error && error.message || error}`))
     window.__studySession = session // testing hook
   } catch (error) {

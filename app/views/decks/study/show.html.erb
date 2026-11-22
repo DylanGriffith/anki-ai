@@ -13,7 +13,10 @@
   <%# Both sides of every queued card, pre-rendered (see Reviewing::SessionSerializer).
       "<" is escaped as \u003c so the JSON can never break out of the script tag. %>
   <script type="application/json" id="study-session-data"><%= @session.to_json.gsub("<", '\u003c').html_safe %></script>
-  <style><%= @session["css"].to_s.html_safe %></style>
+  <%# Note-type CSS is user-controlled (imported decks), so it is never
+      rendered raw: study_session.js injects it into this element via
+      textContent, which cannot break out of the tag. %>
+  <style id="study-card-css"></style>
 
   <div id="study-session">
     <div class="study-card anki-card"></div>

@@ -120,4 +120,29 @@ class StudyDeckTest < ApplicationSystemTestCase
     assert_text "urgent card"
     evidence("step3_add_to_next_study")
   end
+
+  test "note-type CSS is injected via textContent and cannot break out of the style tag" do
+    builder = AnkiApkgBuilder.new
+      .add_model(id: 1600000000001, name: "Basic", fields: %w[Front Back],
+                 templates: [ { name: "Card 1", front: "{{Front}}", back: "{{Back}}" } ],
+                 css: ".card { color: red; }</style><script>window.__cssXss = 1</script>")
+      .add_deck(id: 1650000000001, name: "Css Deck", desc: "css injection probe")
+      .add_note(id: 1600000000101, guid: "g1", mid: 1600000000001, fields: [ "a", "b" ])
+      .add_card(id: 1600000000201, nid: 1600000000101, did: 1650000000001, due: 1)
+    User.create!(name: "student", password: "password123")
+    sign_in_as("student", "password123")
+    with_apkg(builder, "css-deck") do |path|
+      visit decks_path
+      click_on "Import .apkg"
+      attach_file "file", path
+      click_submit("Import")
+    end
+
+    click_on "Study"
+    assert_selector "#study-card-css", visible: :all
+    css = page.evaluate_script("document.getElementById('study-card-css').textContent")
+    assert_includes css, ".card { color: red; }"
+    # The payload is stored as inert text inside the style element and never runs.
+    assert_nil page.evaluate_script("window.__cssXss")
+  end
 end
