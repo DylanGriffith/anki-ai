@@ -65,8 +65,9 @@ module Ai
           function: {
             name: "generate_image",
             description: "Generate a picture or diagram and attach it to the deck as a " \
-                         "media file. Use it when cards need a visual (anatomy, maps, " \
-                         "circuits, labeled diagrams). The result's `usage` shows the " \
+                         "media file. OPTIONAL and slow: call it ONLY when the user's " \
+                         "request explicitly asks for an image, picture, or diagram — " \
+                         "not on your own initiative. The result's `usage` shows the " \
                          "exact <img> tag to put in a field value.",
             parameters: {
               type: "object",
@@ -76,8 +77,9 @@ module Ai
                 prompt: { type: "string",
                           description: "What the image should show, e.g. 'Simple labeled diagram of a neuron: soma, dendrites, axon, myelin sheath, synapse. Clean flat style, no watermark'." },
                 occlusion: { type: "boolean",
-                             description: "true for labeled diagrams that should be studied by " \
-                                          "recalling what each label names ('labels of parts of a " \
+                             description: "true only when the user explicitly asked for image " \
+                                          "occlusion — a labeled diagram studied by recalling " \
+                                          "what each label names ('labels of parts of a " \
                                           "neuron'): auto-derives one mask per label, and " \
                                           "generates one occlusion card per mask from a single " \
                                           "occlusion note. Otherwise omit it." }
@@ -313,12 +315,16 @@ module Ai
         return "" unless images_configured?
 
         "The generate_image tool creates a picture or diagram and attaches it to the " \
-          "deck as a media file (at most #{IMAGES_PER_RUN} per run). Use it when cards " \
-          "need a visual — anatomy, maps, circuits, labeled diagrams. Reference the " \
-          "generated file in field values as <img src='filename.png'> (never remote or " \
-          "data URLs), and write cards around what the image shows.\n" \
-          "Occlusion: for labeled diagrams that should be studied by recalling what each " \
-          "label names (e.g. 'labels of parts of a neuron'), pass occlusion: true to " \
+          "deck as a media file (at most #{IMAGES_PER_RUN} per run). It is OPTIONAL and " \
+          "slower than everything else: call it ONLY when the user's request explicitly " \
+          "asks for a picture, diagram, image, or visual — never on your own " \
+          "initiative, and never for decks that are fine as plain text cards. When you " \
+          "do use it, reference the generated file in field values as " \
+          "<img src='filename.png'> (never remote or data URLs), and write cards around " \
+          "what the image shows.\n" \
+          "Occlusion: when the user explicitly asks for image occlusion (a labeled " \
+          "diagram studied by recalling what each label names, e.g. 'labels of parts " \
+          "of a neuron'), pass occlusion: true to " \
           "generate_image, then create one occlusion note type (kind 'occlusion', fields " \
           "['Image', 'Notes'], front template '{{Image}}', back template " \
           "'{{Image}}<hr>{{Notes}}') and exactly ONE occlusion note whose Image field " \
