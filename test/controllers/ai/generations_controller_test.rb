@@ -69,11 +69,10 @@ class Ai::GenerationsControllerTest < ActionDispatch::IntegrationTest
     assert_select "details.transcript-entry[open]", count: 0
     assert_select "details.transcript-entry--tool summary", text: "add_note"
     assert_select ".transcript-thinking", text: /weighing the options/
-    # Green dot for done, and the auto-scroll script (but no polling)
+    # Green dot for done, and the status marker the JS poller keys off
     assert_select ".status-dot.status-dot--done", count: 1
-    assert_match(/scrollTop = box\.scrollHeight/, @response.body)
+    assert_select ".generation-status[data-generation-status=done]", count: 1
     assert_match(/Open deck/, @response.body)
-    assert_no_match(/setTimeout/, @response.body) # done: no polling script
   end
 
   test "show polls while running" do
@@ -90,7 +89,8 @@ class Ai::GenerationsControllerTest < ActionDispatch::IntegrationTest
     # …with a visible live preview line and a char counter
     assert_select ".stream-preview", text: /Buil/
     assert_select ".stream-preview", text: /18 chars/
-    assert_match(/setTimeout/, @response.body)
+    # The JS poller (application.js) refreshes while the marker says running
+    assert_select ".generation-status[data-generation-status=running]", count: 1
   end
 
   test "show marks failed generations with a red dot and the error" do

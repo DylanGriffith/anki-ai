@@ -1,6 +1,6 @@
 <div class="page-header">
   <h1>AI deck generation</h1>
-  <span class="generation-status">
+  <span class="generation-status" data-generation-status="<%= @generation.status %>">
     <span class="status-dot status-dot--<%= status_tone %>" title="<%= @generation.status %>"></span>
     <%= @generation.status %> · <%= @generation.model %>
     <% if @generation.turn_count.positive? %>
@@ -21,7 +21,7 @@
 <p class="deck-description"><strong>Prompt:</strong> <%= @generation.prompt %></p>
 
 <% if @generation.running? || @generation.pending? %>
-  <p class="muted" data-generation-status="<%= @generation.status %>">
+  <p class="muted">
     The AI agent is working… this page refreshes every couple of seconds.
   </p>
 <% end %>
@@ -84,16 +84,3 @@
   <% end %>
   <%= link_to "Back to decks", decks_path, class: "btn btn--secondary" %>
 </div>
-
-<script>
-  // Keep the newest entry in view while the transcript grows.
-  const box = document.querySelector(".transcript")
-  if (box) box.scrollTop = box.scrollHeight
-  <% if @generation.pending? || @generation.running? %>
-    // Poll: a plain Turbo replace-visit, no frameworks, no websocket.
-    setTimeout(() => {
-      if (window.Turbo) { Turbo.visit(window.location.href, { action: "replace" }) }
-      else { window.location.reload() }
-    }, 2000)
-  <% end %>
-</script>
