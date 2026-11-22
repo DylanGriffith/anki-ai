@@ -201,6 +201,14 @@ scripted fake server, and can be deleted without touching study/import code.
   `Net::HTTP`, no new dependency — and falls back to a plain completion if the server
   ignores `stream`. Config from `ai_settings` (set by `rake ai:config[base_url,api_key]`;
   key encrypted at rest).
+  Content deltas are parsed by dialect, never `to_s`'d: plain strings; typed-part
+  arrays from thinking models (`{"type" => "thinking", ...}` parts go to a separate
+  `thinking` buffer, `text` parts to content — a naive `.to_s` leaks Ruby inspect
+  garbage into content); DeepSeek-style `reasoning`/`reasoning_content` fields. Output
+  is bounded in three layers: `max_tokens` on every request (16k), a retry without it
+  when a server 400s on the parameter, and a client-side 128k-char cap that aborts a
+  stream that ignores both (endless chunk streams never hit per-chunk read timeouts,
+  so without this a looping model hangs a generation forever).
 - `Ai::Agent::DeckBuilder` — the loop: system prompt (deck-builder persona + tool
   schemas) → model responds (assistant text and/or tool calls) → job executes tools →
   tool results appended → repeat until the model calls `finish` or a turn/tool-call
@@ -220,9 +228,14 @@ scripted fake server, and can be deleted without touching study/import code.
   is incremental: the agent streams each turn (`on_delta`) into the transcript via
   `Ai::Generation#log_stream!` — a single in-progress entry replaced in place, throttled
   to one write per second — and `log_assistant!` swaps in the final entry, so polling
-  shows live text/tool-call progress instead of one burst at the end. The transcript
-  renders as collapsed `<details>` rows (role/tool name in the summary, text or JSON
-  inside), auto-scrolled to the bottom, with a status dot: orange while pending/running,
+  shows live text/tool-call progress instead of one burst at the end. Only a capped
+  tail of the streamed text is journaled (400 chars live, 2k final) plus a true char
+  count, so a runaway model can never bloat the row; a failed generation drops its
+  "thinking…" placeholder (`clear_stream!`). Runaway monologues are truncated before
+  re-entering the chat history, and thinking is never sent back to the API. The
+  transcript renders as collapsed `<details>` rows (role/tool name in the summary,
+  text or JSON inside) with a live preview line + char counter while streaming,
+  auto-scrolled to the bottom, with a status dot: orange while pending/running,
   green when done, red when failed.
 - The API key is encrypted at rest with `ActiveSupport::MessageEncryptor` keyed from
   `secret_key_base` (no Rails AR-encryption credentials setup to juggle).
@@ -230,11 +243,14 @@ scripted fake server, and can be deleted without touching study/import code.
   HTTP server (Puma hosting a Rack app, no new dependency) serving scripted
   tool-call sequences; when the request asks for `stream: true` it serves real SSE
   (events split mid-line into two chunks to exercise the client's line buffering,
-  content/arguments sliced so accumulation is observable). The agent's real Net::HTTP
-  path runs end-to-end without
+  content/arguments sliced so accumulation is observable). It can also script the
+  reasoning dialects (typed-part arrays, `reasoning` string fields), a degenerate
+  never-ending stream (`loop:`), and a 400 for `max_tokens` (the o-series retry). The
+  agent's real Net::HTTP path runs end-to-end without
   network; scripted responses can be computed from earlier tool results (exactly what
-  a real model does). System tests cover generate → study the deck, API-failure UX
-  and unconfigured UX. In tests the queue adapter is :inline (the system-test app
+  a real model does). System tests cover generate → study the deck, API-failure UX,
+  a stuck-in-a-loop model aborting to a clear failure, and unconfigured UX. In tests
+  the queue adapter is :inline (the system-test app
   server runs in a separate process, so the :test adapter's in-memory queue would
   never see its enqueues).
 

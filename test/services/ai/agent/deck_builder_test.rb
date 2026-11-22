@@ -179,4 +179,62 @@ class Ai::Agent::DeckBuilderTest < ActiveSupport::TestCase
     assert tool_entries.third["error"]
     assert_equal 0, other_deck.notes.count
   end
+
+  test "streaming progress is journaled with thinking and a char counter" do
+    generation = build_generation
+    replies = [
+      { content: nil, thinking: "pondering",
+        tool_calls: [ { id: "c1", name: "create_deck", arguments: { "name" => "T" } } ] },
+      { content: nil, thinking: nil,
+        tool_calls: [ { id: "c2", name: "finish", arguments: { "summary" => "s" } } ] }
+    ]
+    snapshots = []
+    spy = Class.new do
+      def initialize(generation, replies, snapshots)
+        @generation = generation
+        @replies = replies
+        @snapshots = snapshots
+      end
+
+      def chat(model:, messages:, tools:, on_delta:, **_)
+        on_delta.call(content: "partial text", thinking: "partial thought", tool_calls: [])
+        # The agent's on_delta wrapper writes the journal synchronously —
+        # capture what the status page would poll right now.
+        @snapshots << @generation.reload.journal.last.dup
+        @replies.shift
+      end
+    end.new(generation, replies, snapshots)
+
+    assert_equal :done, Ai::Agent::DeckBuilder.new(generation, client: spy).call
+
+    stream_entry = snapshots.first
+    assert stream_entry["streaming"]
+    assert_equal "partial text", stream_entry["text"]
+    assert_equal "partial thought", stream_entry["thinking"]
+    assert_equal "partial text".length + "partial thought".length, stream_entry["chars"]
+    # the finished transcript no longer carries the placeholder
+    assert generation.reload.journal.none? { |e| e["streaming"] }
+  end
+
+  test "runaway monologues are capped in the journal and not replayed in full" do
+    # A model that answers a tool call with a giant text blob plus reasoning:
+    # the blob must not bloat the journal, and must not go back into the
+    # chat history at full size (the next request carries it).
+    @server.chat_response(thinking: "p" * 5_000, content: "y" * 20_000, tool_calls: [
+      { name: "create_deck", arguments: { name: "Big" } }
+    ])
+    @server.chat_response(tool_calls: [ { name: "finish", arguments: { summary: "ok" } } ])
+
+    generation = build_generation
+    assert_equal :done, Ai::Agent::DeckBuilder.new(generation).call
+
+    assistant_entry = generation.reload.journal.select { |e| e["type"] == "assistant" }.first
+    assert_equal Ai::Generation::ENTRY_TAIL + 1, assistant_entry["text"].length
+    assert_equal Ai::Generation::ENTRY_TAIL + 1, assistant_entry["thinking"].length
+
+    second_request = @server.chat_requests.second
+    replayed = second_request[:body]["messages"].find { |m| m["role"] == "assistant" }
+    assert replayed["content"].length < 20_000
+    assert_includes replayed["content"], "truncated"
+  end
 end

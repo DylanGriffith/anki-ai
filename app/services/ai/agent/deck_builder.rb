@@ -166,10 +166,13 @@ module Ai
           reply = @client.chat(model: @generation.model, messages: @messages, tools: TOOL_SCHEMA,
                                on_delta: ->(state) {
                                  @generation.log_stream!(text: state[:content],
-                                                         tool_calls: state[:tool_calls])
+                                                         thinking: state[:thinking],
+                                                         tool_calls: state[:tool_calls],
+                                                         chars: state[:content].length +
+                                                                state[:thinking].length)
                                })
 
-          @messages << { role: "assistant", content: reply[:content],
+          @messages << { role: "assistant", content: history_content(reply[:content]),
                          tool_calls: reply[:tool_calls].map { |c| { id: c[:id], type: "function",
                                                                    function: { name: c[:name],
                                                                                arguments: JSON.generate(c[:arguments]) } } } }
@@ -198,6 +201,7 @@ module Ai
           raise Error, "the model did not call finish within #{MAX_TURNS} turns"
         end
       rescue Error => e
+        @generation.clear_stream!
         @generation.update!(status: :failed, error: e.message, finished_at: Time.now.utc)
         @generation.log!(type: "status", text: "failed", error: e.message)
         :failed
@@ -212,9 +216,21 @@ module Ai
         Client.new(base_url: setting.base_url, api_key: setting.api_key)
       end
 
+      # The model's own words go back into the chat history; cap pathological
+      # monologues so a looping model cannot bloat (and slow) every later
+      # request. Thinking is never sent back — providers ignore or reject it.
+      HISTORY_TEXT_MAX = 8_000
+
+      def history_content(text)
+        return text if text.nil? || text.length <= HISTORY_TEXT_MAX
+
+        "#{text.first(4_000)}\n…[truncated #{text.length - 6_000} characters]…\n#{text.last(2_000)}"
+      end
+
       def log_assistant(reply)
         entry = { type: "assistant", turn: @generation.turn_count, at: Time.now.utc.to_i }
         entry[:text] = reply[:content] if reply[:content].present?
+        entry[:thinking] = reply[:thinking] if reply[:thinking].present?
         entry[:tool_calls] = reply[:tool_calls].map { |c| c[:name] } if reply[:tool_calls].any?
         @generation.log_assistant!(entry)
       end

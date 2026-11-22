@@ -66,4 +66,40 @@ class Ai::GenerationTest < ActiveSupport::TestCase
     assert_equal "Building the deck", entries.last["text"]
     assert entries.none? { |e| e["streaming"] } # no placeholder left behind
   end
+
+  test "log_stream! journals only a capped tail so a runaway stream cannot bloat the transcript" do
+    @generation.log_stream!(text: "x" * 5_000, thinking: "y" * 5_000,
+                            tool_calls: [], chars: 10_000)
+
+    entry = @generation.reload.journal.last
+    assert_equal Ai::Generation::STREAM_TAIL + 1, entry["text"].length  # … + tail
+    assert_equal Ai::Generation::STREAM_TAIL + 1, entry["thinking"].length
+    assert entry["text"].start_with?("…")
+    assert entry["text"].end_with?("x")
+    assert_equal 10_000, entry["chars"] # true streamed size for the UI counter
+  end
+
+  test "log_assistant! caps stored text and thinking" do
+    @generation.log_assistant!(type: "assistant", text: "x" * 10_000, thinking: "y" * 10_000)
+
+    entry = @generation.reload.journal.last
+    assert_equal Ai::Generation::ENTRY_TAIL + 1, entry["text"].length
+    assert_equal Ai::Generation::ENTRY_TAIL + 1, entry["thinking"].length
+    assert entry["thinking"].end_with?("y")
+  end
+
+  test "clear_stream! drops the placeholder but keeps the rest of the journal" do
+    @generation.log!(type: "status", text: "starting")
+    @generation.log_stream!(text: "Buil", tool_calls: [])
+    @generation.clear_stream!
+
+    entries = @generation.reload.journal
+    assert_equal 1, entries.length # only the status entry remains
+    assert_equal "starting", entries.last["text"]
+    assert entries.first.is_a?(Hash) # the transcript is still a JSON array
+
+    # Without a placeholder it is a no-op (failure paths call it blindly)
+    @generation.clear_stream!
+    assert_equal 1, @generation.reload.journal.length
+  end
 end

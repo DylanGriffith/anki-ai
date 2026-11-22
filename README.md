@@ -154,6 +154,34 @@ and a check-in for approval before the next step.
       result JSON inside), auto-scrolled to the bottom on every render. Status dot in
       the header: orange in progress, green done, red failed. No new gems, no
       frameworks — plain HTML/JS.
+- [x] **Step 8 follow-up — thinking-model streaming, bounded output (bug fix).** The
+      first streaming version broke on thinking models (seen in the wild): providers
+      that stream reasoning as typed parts inside `delta.content`
+      (`[{"type":"thinking","thinking":[{...}]}]`) turned into Ruby-inspect garbage in
+      the content buffer, the model degenerated into looping on one segment forever,
+      and — with no `max_tokens` and per-chunk read timeouts — the request never
+      ended: stuck turn 1, an ever-growing journal (multi-MB rows) and an
+      ever-growing chat history. Fixes, defense in depth:
+      - `Ai::Client` parses content deltas by dialect: plain strings, typed-part
+        arrays (`text` parts → content, `thinking`/`reasoning` parts → a separate
+        thinking buffer), and DeepSeek-style `reasoning`/`reasoning_content` string
+        fields. Plain completions with array content normalize the same way. Reply
+        shape: `{ content:, thinking:, tool_calls: }`.
+      - Every chat request sends `max_tokens` (16k) so the server stops cleanly; a
+        400 blaming `max_tokens` (o-series, output ceilings) is retried without it;
+        a client-side char cap (128k) aborts streams that ignore both — a looping
+        model now fails the generation in seconds with "looks stuck in a loop"
+        instead of hanging forever.
+      - The journal stores only a capped tail of streamed text/thinking (400 chars
+        live, 2k final) plus a true char counter; runaway monologues are truncated
+        before re-entering the chat history (thinking never goes back at all).
+      - The status page shows a live preview line (last text/thinking, ellipsized)
+        with the char counter in the collapsed summary — visible progress while
+        streaming — and clears the "thinking…" placeholder when a generation fails.
+      - E2E: a scripted model stuck emitting one segment forever now aborts and
+        fails clearly (`step8_ai_loop_aborted`); unit tests cover every dialect,
+        the cap, the retry, and the journal caps. The three orphaned running
+        generations in the dev DB were marked failed and their transcripts trimmed.
 
 ## Non-goals (for now)
 

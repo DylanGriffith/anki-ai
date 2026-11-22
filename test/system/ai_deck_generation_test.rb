@@ -17,8 +17,11 @@ class AiDeckGenerationTest < ApplicationSystemTestCase
     User.create!(name: "ai-student", password: "password123")
     sign_in_as("ai-student", "password123")
 
-    # What "the model" does: build a tiny German numbers deck
-    @server.chat_response(tool_calls: [
+    # What "the model" does: build a tiny German numbers deck — as a
+    # thinking model (reasoning streams as array content parts, the dialect
+    # that previously corrupted the content buffer)
+    @server.chat_response(thinking: "Planning a German numbers deck",
+                          tool_calls: [
       { name: "create_deck", arguments: { name: "German Numbers", description: "1-3 in German" } }
     ])
     @server.chat_response(tool_calls: [
@@ -52,6 +55,8 @@ class AiDeckGenerationTest < ApplicationSystemTestCase
     assert_text "German numbers one to three"
     assert_text "create_deck"
     assert_text "add_note"
+    # The model's reasoning is journaled (collapsed inside the entry)
+    assert_match(/Planning a German numbers deck/, page.body)
     evidence("step6_ai_done")
 
     # The deck the agent built is one click away and studyable
@@ -95,6 +100,28 @@ class AiDeckGenerationTest < ApplicationSystemTestCase
     assert_text "Generation failed"
     evidence("step6_ai_failed")
     assert_text "Back to decks"
+  end
+
+  test "a model stuck streaming the same segment forever is aborted, not hung" do
+    User.create!(name: "ai-student", password: "password123")
+    sign_in_as("ai-student", "password123")
+
+    # The failure seen in the wild: a thinking model emitting one identical
+    # segment forever — no [DONE] until the (huge) script is exhausted, and
+    # per-chunk read timeouts never fire. The client's char cap must abort
+    # it and the generation must end as a clear failure.
+    @server.chat_response(loop: 40_000)
+
+    visit decks_path
+    click_on "New AI deck"
+    fill_in "What should the deck cover?", with: "Anything"
+    click_submit("Generate deck")
+
+    assert_selector "h1", text: "AI deck generation"
+    assert_text "failed"
+    assert_text "stuck in a loop"
+    assert_no_text "thinking…" # the in-progress placeholder was cleared
+    evidence("step8_ai_loop_aborted")
   end
 
   test "unconfigured AI hides the button and direct URLs explain why" do

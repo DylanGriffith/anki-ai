@@ -25,6 +25,11 @@ class FakeOpenAIServer
       in [ "GET", "/models" ]
         json(200, { object: "list", data: @server.models.map { |id| { id: id } } })
       in [ "POST", "/chat/completions" ]
+        if @server.reject_max_tokens? && @server.requests.last[:body]["max_tokens"]
+          return json(400, { error: { message: "Unsupported parameter: 'max_tokens' is not " \
+                                              "supported with this model." } })
+        end
+
         entry = @server.next_chat_response
         return json(500, { error: { message: "script exhausted" } }) unless entry
 
@@ -44,7 +49,16 @@ class FakeOpenAIServer
     private
 
     # Server-Sent Events stream, like a real OpenAI-compatible server:
-    # text and tool-call arguments split across multiple deltas.
+    # text and tool-call arguments split across multiple deltas, in the
+    # dialects real providers use:
+    #   entry[:thinking]  -> reasoning as ARRAY content parts (GLM-style
+    #                        thinking models: {"type" => "thinking",
+    #                        "thinking" => [{"type" => "text", ...}]})
+    #   entry[:reasoning] -> reasoning as a delta `reasoning` string field
+    #                        (DeepSeek-style)
+    #   entry[:loop]      -> N identical thinking-part deltas with no end
+    #                        in sight (the degenerate model that streams
+    #                        the same segment forever)
     def sse_stream(entry)
       events = []
       if entry[:error]
@@ -54,17 +68,34 @@ class FakeOpenAIServer
         end
       else
         events << { choices: [ { index: 0, delta: { role: "assistant", content: nil } } ] }
-        entry[:content].to_s.chars.each_slice(8).each do |slice|
-          events << { choices: [ { index: 0, delta: { content: slice.join } } ] }
-        end
-        Array(entry[:tool_calls]).each_with_index do |call, index|
-          header = { index: index, id: "call-#{call.object_id}", type: "function" }
-          header[:function] = { name: call[:name], arguments: "" }
-          events << { choices: [ { index: 0, delta: { tool_calls: [ header ] } } ] }
-          JSON.generate(call[:arguments] || {}).chars.each_slice(12).each do |slice|
-            events << { choices: [ { index: 0,
-                                     delta: { tool_calls: [ { index: index,
-                                                             function: { arguments: slice.join } } ] } } ] }
+        if entry[:loop]
+          entry[:loop].times do
+            events << { choices: [ { index: 0, delta: { content: [ thinking_part("}^{A}^{A", true) ] } } ] }
+          end
+        else
+          if entry[:reasoning]
+            entry[:reasoning].to_s.chars.each_slice(8) do |slice|
+              events << { choices: [ { index: 0, delta: { reasoning: slice.join } } ] }
+            end
+          end
+          if entry[:thinking]
+            entry[:thinking].to_s.chars.each_slice(8) do |slice|
+              events << { choices: [ { index: 0, delta: { content: [ thinking_part(slice.join, false) ] } } ] }
+            end
+            events << { choices: [ { index: 0, delta: { content: [ thinking_part("", true) ] } } ] }
+          end
+          entry[:content].to_s.chars.each_slice(8).each do |slice|
+            events << { choices: [ { index: 0, delta: { content: slice.join } } ] }
+          end
+          Array(entry[:tool_calls]).each_with_index do |call, index|
+            header = { index: index, id: "call-#{call.object_id}", type: "function" }
+            header[:function] = { name: call[:name], arguments: "" }
+            events << { choices: [ { index: 0, delta: { tool_calls: [ header ] } } ] }
+            JSON.generate(call[:arguments] || {}).chars.each_slice(12).each do |slice|
+              events << { choices: [ { index: 0,
+                                       delta: { tool_calls: [ { index: index,
+                                                               function: { arguments: slice.join } } ] } } ] }
+            end
           end
         end
       end
@@ -81,15 +112,26 @@ class FakeOpenAIServer
       [ 200, { "Content-Type" => "text/event-stream" }, body ]
     end
 
+    def thinking_part(text, closed)
+      { type: "thinking", thinking: [ { type: "text", text: text } ], closed: closed }
+    end
+
+    # The plain-completion dialects: thinking models return content as an
+    # array of parts; DeepSeek-style servers put reasoning in its own field.
     def message_for(entry)
       if entry[:error]
         { role: "assistant", content: entry[:error] }
       else
-        { role: "assistant", content: entry[:content],
-          tool_calls: Array(entry[:tool_calls]).map do |call|
-            { id: "call-#{call.object_id}", type: "function",
-              function: { name: call[:name], arguments: JSON.generate(call[:arguments] || {}) } }
-          end }
+        content = entry[:thinking] ? [ thinking_part(entry[:thinking], true),
+                                       { type: "text", text: entry[:content].to_s } ]
+                                   : entry[:content]
+        message = { role: "assistant", content: content }
+        message[:reasoning] = entry[:reasoning] if entry[:reasoning]
+        message[:tool_calls] = Array(entry[:tool_calls]).map do |call|
+          { id: "call-#{call.object_id}", type: "function",
+            function: { name: call[:name], arguments: JSON.generate(call[:arguments] || {}) } }
+        end
+        message
       end
     end
 
@@ -99,6 +141,15 @@ class FakeOpenAIServer
   end
 
   attr_reader :models, :requests
+
+  # Reject max_tokens with OpenAI's o-series error (for the retry test).
+  def reject_max_tokens=(flag)
+    @reject_max_tokens = flag
+  end
+
+  def reject_max_tokens?
+    !!@reject_max_tokens
+  end
 
   def initialize(models: %w[fake-mini fake-pro], streaming: true)
     @models = models
@@ -134,15 +185,19 @@ class FakeOpenAIServer
 
   # Queue one scripted assistant turn: content and/or tool_calls
   # ({ name:, arguments: } hashes). `error:` serves a plain-content
-  # assistant message instead. A block is evaluated when the request
-  # arrives, so scripted arguments can depend on earlier tool results
-  # (exactly what a real model does):
+  # assistant message instead. `thinking:` / `reasoning:` script the
+  # reasoning dialects (content-part arrays / delta string field),
+  # `loop:` a degenerate never-ending stream. A block is evaluated when
+  # the request arrives, so scripted arguments can depend on earlier tool
+  # results (exactly what a real model does):
   #   server.chat_response do |srv|
   #     { tool_calls: [{ name: "update_note",
   #                      arguments: { note_id: srv.tool_results(-2)["note_id"] } }] }
   #   end
-  def chat_response(content: nil, tool_calls: [], error: nil, &block)
-    @script << (block || ->(_server) { { content: content, tool_calls: tool_calls, error: error } })
+  def chat_response(content: nil, tool_calls: [], error: nil, thinking: nil, reasoning: nil,
+                    loop: nil, &block)
+    @script << (block || ->(_server) { { content: content, tool_calls: tool_calls, error: error,
+                                         thinking: thinking, reasoning: reasoning, loop: loop } })
     self
   end
 

@@ -43,9 +43,22 @@
           <% if entry["tool_calls"].present? %>
             <span class="muted">→ <%= entry["tool_calls"].map { |c| c.is_a?(String) ? c : c["name"] }.compact.join(", ") %></span>
           <% end %>
+          <% if entry["streaming"] %>
+            <% preview = entry["text"].presence || entry["thinking"].presence %>
+            <span class="stream-preview">
+              <%= preview ? truncate(preview, length: 140) : "…" %>
+              <% if entry["chars"].to_i.positive? %>
+                <span class="muted">· <%= number_with_delimiter(entry["chars"]) %> chars</span>
+              <% end %>
+            </span>
+          <% end %>
         </summary>
+        <% if entry["thinking"].present? %>
+          <div class="muted">thinking</div>
+          <div class="transcript-thinking"><%= truncate(entry["thinking"], length: 2_000) %></div>
+        <% end %>
         <% if entry["text"].present? %>
-          <div><%= entry["text"] %></div>
+          <div><%= truncate(entry["text"], length: 2_000) %></div>
         <% end %>
       </details>
     <% when "tool" %>

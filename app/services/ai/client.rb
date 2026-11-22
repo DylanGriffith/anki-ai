@@ -12,6 +12,17 @@ module Ai
     OPEN_TIMEOUT = 10
     READ_TIMEOUT = 120
 
+    # Bounds on the model's output. max_tokens asks the server to stop
+    # cleanly (a degenerate model looping on one segment otherwise streams
+    # forever — read timeouts are per-chunk, so an endless stream never
+    # times out; thinking models also burn many tokens on reasoning, so
+    # this is generous). max_chars is the client-side hard stop for servers
+    # that ignore it — a bounded reply can never reach it. A 400 that
+    # blames max_tokens (o-series models, output ceilings) is retried
+    # without it.
+    DEFAULT_MAX_TOKENS = 16_384
+    DEFAULT_MAX_CHARS = 128_000
+
     def initialize(base_url:, api_key:)
       @base = URI.parse(base_url.to_s.strip.sub(%r{/+\z}, ""))
       raise Error, "invalid base url" unless %w[http https].include?(@base.scheme)
@@ -20,21 +31,23 @@ module Ai
     end
 
     # Returns the assistant message as a plain hash:
-    #   { content: String?, tool_calls: [{ id:, name:, arguments: Hash }] }
-    # (OpenAI sends tool-call arguments as a JSON *string*.)
+    #   { content: String?, thinking: String?, tool_calls: [{ id:, name:, arguments: Hash }] }
+    # (OpenAI sends tool-call arguments as a JSON *string*.) `thinking` is
+    # the model's reasoning, kept separate from content (see absorb_delta).
     # With `on_delta`, streams: the request sets `stream: true` and
-    # on_delta is called (throttled by the caller) with the accumulated
-    #   { content: String, tool_calls: [{ id:, name: }] }
+    # on_delta is called with the accumulated
+    #   { content: String, thinking: String, tool_calls: [{ id:, name: }] }
     # while chunks arrive — a long generation phase stays visible on the
     # status page instead of appearing all at once. Servers that ignore
     # `stream` and answer with a plain completion are handled too.
-    def chat(model:, messages:, tools: [], on_delta: nil)
-      return chat_streaming(model, messages, tools, on_delta) if on_delta
+    def chat(model:, messages:, tools: [], on_delta: nil,
+             max_tokens: DEFAULT_MAX_TOKENS, max_chars: DEFAULT_MAX_CHARS)
+      return chat_streaming(model, messages, tools, on_delta, max_tokens, max_chars) if on_delta
 
       body = { model: model, messages: messages }
       body[:tools] = tools if tools.any?
-      data = request(:post, "/chat/completions", body)
-      message_from(data)
+      body[:max_tokens] = max_tokens if max_tokens
+      message_from(chat_request(body))
     end
 
     # Model ids for the dropdown.
@@ -49,8 +62,15 @@ module Ai
       message = data.dig("choices", 0, "message")
       raise Error, "chat response has no message" unless message.is_a?(Hash)
 
+      content = +""
+      thinking = +""
+      absorb_message_content(message["content"], content, thinking)
+      thinking << message["reasoning"] if message["reasoning"].is_a?(String)
+      thinking << message["reasoning_content"] if message["reasoning_content"].is_a?(String)
+
       {
-        content: message["content"],
+        content: content.presence,
+        thinking: thinking.presence,
         tool_calls: Array(message["tool_calls"]).map do |call|
           {
             id: call["id"],
@@ -64,13 +84,27 @@ module Ai
     # Streaming chat: Server-Sent Events, one JSON delta per "data:" line.
     # Tool-call arguments arrive as fragments keyed by an index; text as
     # content deltas. Returns the same shape as the non-streaming path.
-    def chat_streaming(model, messages, tools, on_delta)
+    def chat_streaming(model, messages, tools, on_delta, max_tokens, max_chars)
       body = { model: model, messages: messages, stream: true }
       body[:tools] = tools if tools.any?
+      body[:max_tokens] = max_tokens if max_tokens
 
+      begin
+        stream_response(body, on_delta, max_chars)
+      rescue Error => e
+        # OpenAI's o-series models reject `max_tokens`; retry once without
+        # it (the char cap still bounds the stream).
+        raise unless e.message.include?("400") && e.message.match?(/max_tokens/i)
+
+        stream_response(body.except(:max_tokens), on_delta, max_chars)
+      end
+    end
+
+    def stream_response(body, on_delta, max_chars)
       http = new_http
       request = build_request(:post, "/chat/completions", body)
       content = +""
+      thinking = +""
       tool_calls = {}
 
       http.request(request) do |response|
@@ -78,14 +112,17 @@ module Ai
           raise Error, "API returned #{response.code}: #{truncate(response.body)}"
         end
 
-        type = response["content-type"].to_s
-        if type.include?("text/event-stream")
+        if response["content-type"].to_s.include?("text/event-stream")
           each_sse_data(response) do |payload|
             delta = payload.dig("choices", 0, "delta") || {}
-            content << delta["content"].to_s if delta["content"]
+            absorb_delta(delta, content, thinking)
             merge_tool_delta(tool_calls, delta["tool_calls"])
-            # dup: consumers must not see later mutations of the buffer
-            on_delta.call(content: content.dup,
+            if content.length + thinking.length > max_chars
+              raise Error, "model streamed more than #{max_chars} characters without " \
+                           "finishing — it looks stuck in a loop; aborting"
+            end
+            # dup: consumers must not see later mutations of the buffers
+            on_delta.call(content: content.dup, thinking: thinking.dup,
                           tool_calls: tool_calls.values_at(*tool_calls.keys.sort)
                                                .map { |c| { id: c[:id], name: c[:name] } })
           end
@@ -97,6 +134,7 @@ module Ai
 
       {
         content: content.presence,
+        thinking: thinking.presence,
         tool_calls: tool_calls.values_at(*tool_calls.keys.sort).map do |c|
           { id: c[:id], name: c[:name], arguments: parse_arguments(c[:arguments]) }
         end
@@ -106,6 +144,41 @@ module Ai
     rescue Net::OpenTimeout, Net::ReadTimeout, Errno::ECONNREFUSED, Errno::EHOSTUNREACH,
            OpenSSL::SSL::SSLError, SocketError => e
       raise Error, "could not reach the API: #{e.class} #{e.message}"
+    end
+
+    # Content deltas come in several dialects and must never be #to_s'd
+    # wholesale: a plain String (most servers), a `reasoning` /
+    # `reasoning_content` String (DeepSeek-style), or an Array of typed
+    # parts (thinking models, e.g.
+    #   [{"type" => "thinking", "thinking" => [{"type" => "text", "text" => "…"}]}]
+    # ). Only real answer text reaches the content buffer; reasoning goes
+    # to its own buffer so the UI can show (and cap) it separately.
+    def absorb_delta(delta, content, thinking)
+      absorb_message_content(delta["content"], content, thinking)
+      thinking << delta["reasoning"] if delta["reasoning"].is_a?(String)
+      thinking << delta["reasoning_content"] if delta["reasoning_content"].is_a?(String)
+    end
+
+    def absorb_message_content(value, content, thinking)
+      case value
+      when String then content << value
+      when Array then value.each { |part| absorb_part(part, content, thinking) }
+      when Hash then absorb_part(value, content, thinking)
+      end
+    end
+
+    def absorb_part(part, content, thinking)
+      return unless part.is_a?(Hash)
+
+      case part["type"]
+      when "thinking", "reasoning"
+        Array(part["thinking"] || part["reasoning"]).each do |chunk|
+          thinking << chunk["text"] if chunk.is_a?(Hash) && chunk["text"].is_a?(String)
+        end
+        thinking << part["text"] if part["text"].is_a?(String)
+      else # "text", or a part with no type carrying plain text
+        content << part["text"] if part["text"].is_a?(String)
+      end
     end
 
     # Tool-call deltas: the first fragment carries id + function name, later
@@ -165,6 +238,16 @@ module Ai
     rescue Net::OpenTimeout, Net::ReadTimeout, Errno::ECONNREFUSED, Errno::EHOSTUNREACH,
            OpenSSL::SSL::SSLError, SocketError => e
       raise Error, "could not reach the API: #{e.class} #{e.message}"
+    end
+
+    # POST /chat/completions for the non-streaming path, with the
+    # max_tokens-rejected retry shared with the streaming path.
+    def chat_request(body)
+      request(:post, "/chat/completions", body)
+    rescue Error => e
+      raise unless e.message.include?("400") && e.message.match?(/max_tokens/i)
+
+      request(:post, "/chat/completions", body.except(:max_tokens))
     end
 
     def build_request(method, path, body)

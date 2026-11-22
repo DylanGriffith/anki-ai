@@ -185,6 +185,24 @@ label.inline { display: inline; margin: 0; font-weight: 400; }
 .transcript-entry summary::before { content: "▸"; color: var(--muted); font-size: 0.7rem; }
 .transcript-entry[open] summary::before { content: "▾"; }
 .transcript-entry--assistant > div { margin-top: 4px; }
+/* Live progress while streaming: one preview line (last text/thinking),
+   ellipsized, plus a char counter so the page visibly ticks even when the
+   model's output is whitespace or garbage */
+.stream-preview {
+  flex-basis: 100%;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.transcript-thinking {
+  color: var(--muted);
+  font-size: 0.85rem;
+  white-space: pre-wrap;
+  margin-top: 4px;
+}
 /* Status dot in the generation page header: orange = in progress,
    green = done, red = failed */
 .status-dot {

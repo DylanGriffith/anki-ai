@@ -55,7 +55,7 @@ class Ai::GenerationsControllerTest < ActionDispatch::IntegrationTest
 
   test "show renders the transcript and links the deck" do
     generation = Ai::Generation.create!(user: @user, model: "fake-mini", prompt: "test")
-    generation.log!(type: "assistant", text: "Building…")
+    generation.log!(type: "assistant", text: "Building…", thinking: "weighing the options")
     generation.log!(type: "tool", name: "add_note", arguments: { note_type: "Basic" },
                     result: { note_id: 1 }, error: false)
     deck = @user.decks.create!(name: "Shown")
@@ -68,6 +68,7 @@ class Ai::GenerationsControllerTest < ActionDispatch::IntegrationTest
     assert_select "details.transcript-entry", count: 2
     assert_select "details.transcript-entry[open]", count: 0
     assert_select "details.transcript-entry--tool summary", text: "add_note"
+    assert_select ".transcript-thinking", text: /weighing the options/
     # Green dot for done, and the auto-scroll script (but no polling)
     assert_select ".status-dot.status-dot--done", count: 1
     assert_match(/scrollTop = box\.scrollHeight/, @response.body)
@@ -78,13 +79,17 @@ class Ai::GenerationsControllerTest < ActionDispatch::IntegrationTest
   test "show polls while running" do
     generation = Ai::Generation.create!(user: @user, model: "fake-mini", prompt: "test")
     generation.update!(status: :running)
-    generation.log_stream!(text: "Buil", tool_calls: [ { id: "call_1", name: "create_deck" } ])
+    generation.log_stream!(text: "Buil", thinking: "let me think",
+                           tool_calls: [ { id: "call_1", name: "create_deck" } ], chars: 18)
     get ai_generation_url(generation)
     assert_response :success
     assert_select ".status-dot.status-dot--running", count: 1
     # The in-progress assistant entry shows what's streaming so far
     assert_select "details.transcript-entry--assistant summary", text: /thinking…/
     assert_select "details.transcript-entry--assistant summary", text: /create_deck/
+    # …with a visible live preview line and a char counter
+    assert_select ".stream-preview", text: /Buil/
+    assert_select ".stream-preview", text: /18 chars/
     assert_match(/setTimeout/, @response.body)
   end
 
