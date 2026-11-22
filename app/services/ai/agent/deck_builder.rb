@@ -246,7 +246,7 @@ module Ai
         when "delete_note"     then delete_note(args)
         when "list_notes"      then list_notes
         when "finish"          then finish(args)
-        else                        [ { error: "unknown tool #{name}" }, true ]
+        else                        [ { error: "unknown tool #{name.inspect}" }, true ]
         end
       rescue ActiveRecord::RecordInvalid => e
         [ { error: e.record.errors.full_messages.to_sentence }, true ]

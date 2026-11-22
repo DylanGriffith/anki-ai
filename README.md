@@ -167,6 +167,13 @@ and a check-in for approval before the next step.
         thinking buffer), and DeepSeek-style `reasoning`/`reasoning_content` string
         fields. Plain completions with array content normalize the same way. Reply
         shape: `{ content:, thinking:, tool_calls: }`.
+      - Tool-call fragments too: Mistral/GLM (confirmed by dumping a live stream
+        from api.mistral.ai) echoes `"name": ""` on continuation fragments —
+        `""` is truthy in Ruby, so the old overwrite turned every argumented tool
+        call into "unknown tool " (only argument-less calls like `list_notes`
+        survived). Names are now blank-safe and assembled from pieces (vLLM-style
+        split names). Verified with a real 2-card generation: 5 turns, 0 tool
+        errors.
       - Every chat request sends `max_tokens` (16k) so the server stops cleanly; a
         400 blaming `max_tokens` (o-series, output ceilings) is retried without it;
         a client-side char cap (128k) aborts streams that ignore both — a looping

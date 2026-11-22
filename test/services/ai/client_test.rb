@@ -181,6 +181,41 @@ class Ai::ClientTest < ActiveSupport::TestCase
     assert_nil requests.last[:body]["max_tokens"]
   end
 
+  test "Mistral/GLM continuation fragments echoing a blank name do not clobber the real one" do
+    # Confirmed against api.mistral.ai (GLM): the header fragment carries the
+    # name AND the first argument slice; every continuation fragment echoes
+    # function.name = "" — and "" is truthy in Ruby, so a naive overwrite
+    # turns each argumented tool call into "unknown tool ".
+    @server.chat_response(tool_dialect: :blank_name_echo, tool_calls: [
+      { name: "create_deck", arguments: { name: "French", description: "verbs" } }
+    ])
+    states = []
+    reply = @client.chat(model: "fake-mini", messages: [],
+                         tools: [ { type: "function", function: { name: "create_deck" } } ],
+                         on_delta: ->(state) { states << state })
+
+    call = reply[:tool_calls].first
+    assert_equal "create_deck", call[:name]
+    assert_equal({ "name" => "French", "description" => "verbs" }, call[:arguments])
+    # The name stayed intact in every accumulated snapshot too
+    assert states.none? { |s| s[:tool_calls].map { |c| c[:name] }.include?("") }
+  end
+
+  test "function names streamed in pieces are assembled" do
+    # vLLM & friends split tool-call fields — including the name — across
+    # deltas; the pieces must concatenate into the full name.
+    @server.chat_response(tool_dialect: :name_pieces, tool_calls: [
+      { name: "create_deck", arguments: { name: "X" } }
+    ])
+
+    reply = @client.chat(model: "fake-mini", messages: [],
+                         tools: [ { type: "function", function: { name: "create_deck" } } ],
+                         on_delta: ->(_) { })
+
+    assert_equal "create_deck", reply[:tool_calls].first[:name]
+    assert_equal({ "name" => "X" }, reply[:tool_calls].first[:arguments])
+  end
+
   test "base urls tolerate trailing slashes and require a scheme" do
     client = Ai::Client.new(base_url: @server.url + "/", api_key: "k")
     assert_equal %w[fake-mini fake-pro], client.models

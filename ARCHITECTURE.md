@@ -208,7 +208,12 @@ scripted fake server, and can be deleted without touching study/import code.
   is bounded in three layers: `max_tokens` on every request (16k), a retry without it
   when a server 400s on the parameter, and a client-side 128k-char cap that aborts a
   stream that ignores both (endless chunk streams never hit per-chunk read timeouts,
-  so without this a looping model hangs a generation forever).
+  so without this a looping model hangs a generation forever). Tool-call fragments
+  are merged blank-safely: Mistral/GLM echoes `"name": ""` on continuation
+  fragments (confirmed against a live stream — a blank must never clobber the
+  real name, or every argumented tool call becomes "unknown tool "), and
+  providers that split the function name itself across fragments are assembled
+  by concatenation.
 - `Ai::Agent::DeckBuilder` — the loop: system prompt (deck-builder persona + tool
   schemas) → model responds (assistant text and/or tool calls) → job executes tools →
   tool results appended → repeat until the model calls `finish` or a turn/tool-call

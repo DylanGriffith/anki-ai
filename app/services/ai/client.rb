@@ -182,13 +182,18 @@ module Ai
     end
 
     # Tool-call deltas: the first fragment carries id + function name, later
-    # fragments append to the arguments string.
+    # fragments append to the arguments string. Two real-world quirks are
+    # tolerated: Mistral/GLM echoes `"name": ""` on continuation fragments
+    # (a blank must never clobber the real name — "" is truthy in Ruby, so
+    # a naive `if` overwrite turns every argumented tool call into
+    # "unknown tool"), and some models stream the name itself in pieces.
     def merge_tool_delta(tool_calls, deltas)
       Array(deltas).each do |delta|
         index = delta["index"] || 0
         call = tool_calls[index] ||= { id: nil, name: nil, arguments: +"" }
-        call[:id] = delta["id"] if delta["id"]
-        call[:name] = delta.dig("function", "name") if delta.dig("function", "name")
+        call[:id] = delta["id"] if delta["id"].present?
+        name = delta.dig("function", "name")
+        call[:name] = call[:name].to_s + name if name.present?
         call[:arguments] << delta.dig("function", "arguments").to_s
       end
     end

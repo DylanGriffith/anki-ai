@@ -59,6 +59,15 @@ class FakeOpenAIServer
     #   entry[:loop]      -> N identical thinking-part deltas with no end
     #                        in sight (the degenerate model that streams
     #                        the same segment forever)
+    #   entry[:tool_dialect] -> how tool-call fragments are shaped:
+    #     :standard (default)  OpenAI shape — header delta, then
+    #                          argument-only deltas
+    #     :blank_name_echo     Mistral/GLM (confirmed against
+    #                          api.mistral.ai, 2026-11): the header carries
+    #                          name + the FIRST argument slice, and every
+    #                          continuation fragment echoes `"name": ""`
+    #     :name_pieces         providers (vLLM & friends) that stream the
+    #                          function name itself across fragments
     def sse_stream(entry)
       events = []
       if entry[:error]
@@ -87,16 +96,7 @@ class FakeOpenAIServer
           entry[:content].to_s.chars.each_slice(8).each do |slice|
             events << { choices: [ { index: 0, delta: { content: slice.join } } ] }
           end
-          Array(entry[:tool_calls]).each_with_index do |call, index|
-            header = { index: index, id: "call-#{call.object_id}", type: "function" }
-            header[:function] = { name: call[:name], arguments: "" }
-            events << { choices: [ { index: 0, delta: { tool_calls: [ header ] } } ] }
-            JSON.generate(call[:arguments] || {}).chars.each_slice(12).each do |slice|
-              events << { choices: [ { index: 0,
-                                       delta: { tool_calls: [ { index: index,
-                                                               function: { arguments: slice.join } } ] } } ] }
-            end
-          end
+          stream_tool_calls(entry, events)
         end
       end
       events << { choices: [ { index: 0, delta: {}, finish_reason: "tool_calls" } ] }
@@ -110,6 +110,43 @@ class FakeOpenAIServer
         [ text[0, half], text[half..] ]
       end << "data: [DONE]\n\n"
       [ 200, { "Content-Type" => "text/event-stream" }, body ]
+    end
+
+    def stream_tool_calls(entry, events)
+      dialect = entry[:tool_dialect]
+      Array(entry[:tool_calls]).each_with_index do |call, index|
+        id = "call-#{call.object_id}"
+        slices = JSON.generate(call[:arguments] || {}).chars.each_slice(12).map(&:join)
+        if dialect == :name_pieces
+          call[:name].to_s.chars.each_slice(6).each do |piece|
+            events << tool_call_delta(index, index: index, id: id, type: "function",
+                                            function: { name: piece.join, arguments: "" })
+          end
+          slices.each do |slice|
+            events << tool_call_delta(index, index: index, function: { arguments: slice })
+          end
+        elsif dialect == :blank_name_echo
+          # Header fragment carries the name AND the first argument slice;
+          # continuations echo a blank name (which must not clobber it).
+          header = { index: index, id: id, type: "function",
+                     function: { name: call[:name], arguments: slices.shift.to_s } }
+          events << tool_call_delta(index, header)
+          slices.each do |slice|
+            events << tool_call_delta(index, index: index,
+                                            function: { name: "", arguments: slice })
+          end
+        else
+          events << tool_call_delta(index, index: index, id: id, type: "function",
+                                         function: { name: call[:name], arguments: "" })
+          slices.each do |slice|
+            events << tool_call_delta(index, index: index, function: { arguments: slice })
+          end
+        end
+      end
+    end
+
+    def tool_call_delta(index, fragment)
+      { choices: [ { index: 0, delta: { tool_calls: [ fragment ] } } ] }
     end
 
     def thinking_part(text, closed)
@@ -195,9 +232,10 @@ class FakeOpenAIServer
   #                      arguments: { note_id: srv.tool_results(-2)["note_id"] } }] }
   #   end
   def chat_response(content: nil, tool_calls: [], error: nil, thinking: nil, reasoning: nil,
-                    loop: nil, &block)
+                    loop: nil, tool_dialect: nil, &block)
     @script << (block || ->(_server) { { content: content, tool_calls: tool_calls, error: error,
-                                         thinking: thinking, reasoning: reasoning, loop: loop } })
+                                         thinking: thinking, reasoning: reasoning, loop: loop,
+                                         tool_dialect: tool_dialect } })
     self
   end
 

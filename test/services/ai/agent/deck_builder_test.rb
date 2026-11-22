@@ -71,6 +71,36 @@ class Ai::Agent::DeckBuilderTest < ActiveSupport::TestCase
                  tool_names
   end
 
+  test "the Mistral/GLM blank-name-echo dialect builds a deck end to end" do
+    # The provider dialect confirmed against api.mistral.ai: continuation
+    # tool fragments echo `"name": ""`. Before the fix every argumented
+    # tool call arrived nameless and failed as "unknown tool ", while
+    # argument-less calls (list_notes, bare finish) worked.
+    [ { name: "create_deck",
+        arguments: { name: "French History", description: "key facts" } },
+      { name: "upsert_note_type",
+        arguments: { name: "Basic", fields: %w[Front Back],
+                     front_template: "{{Front}}", back_template: "{{Back}}" } },
+      { name: "add_note",
+        arguments: { note_type: "Basic", fields: [ "Verdun", "843 treaty" ] } },
+      { name: "finish", arguments: { summary: "1 card" } }
+    ].each do |call|
+      @server.chat_response(thinking: "planning", tool_dialect: :blank_name_echo,
+                            tool_calls: [ call ])
+    end
+
+    generation = build_generation
+    assert_equal :done, Ai::Agent::DeckBuilder.new(generation).call
+
+    deck = generation.reload.deck
+    assert_equal "French History", deck.name
+    assert_equal 1, deck.notes.count
+
+    tool_entries = generation.journal.select { |e| e["type"] == "tool" }
+    assert_equal %w[create_deck upsert_note_type add_note finish], tool_entries.map { |e| e["name"] }
+    assert tool_entries.none? { |e| e["error"] }
+  end
+
   test "tool errors are surfaced as recoverable results, not failures" do
     @server.chat_response(tool_calls: [
       { name: "add_note", arguments: { note_type: "Basic", fields: %w[x y] } }, # no deck yet
