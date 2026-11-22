@@ -47,7 +47,10 @@ module Ai
     private
 
     def request(body)
-      uri = URI.join(@base, "images/generations")
+      # Same RFC-3986 merge trap the chat client avoids: URI.join on a base
+      # without a trailing slash would drop its last segment ("/v1"), so
+      # append one before joining.
+      uri = URI.join(@base.to_s + "/", "images/generations")
       http = Net::HTTP.new(uri.host, uri.port)
       http.use_ssl = (uri.scheme == "https")
       http.open_timeout = OPEN_TIMEOUT

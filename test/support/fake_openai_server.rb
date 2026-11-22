@@ -39,7 +39,7 @@ class FakeOpenAIServer
           json(200, { id: "chatcmpl-fake", object: "chat.completion",
                       choices: [ { index: 0, message: message_for(entry), finish_reason: "tool_calls" } ] })
         end
-      in [ "POST", "/images/generations" ]
+      in [ "POST", %r{\A(?:/v1)?/images/generations\z} ]
         if @server.images_fail?
           return json(500, { error: { message: "images API down (scripted)" } })
         end

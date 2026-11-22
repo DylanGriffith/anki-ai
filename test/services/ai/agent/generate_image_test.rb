@@ -53,6 +53,24 @@ class Ai::Agent::GenerateImageTest < ActiveSupport::TestCase
     assert_equal "Bearer fake-image-key", image_request[:auth]
   end
 
+  test "a base url with a path segment keeps its path (e.g. .../v1)" do
+    Ai::Setting.current.update!(image_base_url: "#{@server.url}/v1")
+    @server.chat_response(tool_calls: [ { name: "create_deck", arguments: { name: "Neurons" } } ] )
+    @server.chat_response(tool_calls: [
+      { name: "generate_image", arguments: { filename: "neuron.png", prompt: "a neuron" } }
+    ])
+    @server.chat_response(tool_calls: [ { name: "finish", arguments: { summary: "done" } } ] )
+
+    generation = build_generation
+    assert_equal :done, Ai::Agent::DeckBuilder.new(generation).call
+
+    # RFC-3986 merge drops the last path segment of a base without a trailing
+    # slash; the client must not, or https://api.openai.com/v1 404s.
+    assert_equal "/v1/images/generations",
+                 @server.requests.find { |r| r[:path].end_with?("/images/generations") }[:path]
+    assert_not_nil generation.deck.media_files.find_by(filename: "neuron.png")
+  end
+
   test "the generated image renders in card HTML via the deck media route" do
     basic = { name: "Basic", fields: %w[Front Back],
               front_template: "{{Front}}", back_template: "{{FrontSide}}<hr>{{Back}}" }
