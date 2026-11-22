@@ -246,8 +246,15 @@ module Ai
       end
 
       def system_prompt
-        [ role_prompt, workflow_prompt, CARD_RULES, limit_prompt, DB_WARNING ]
+        [ role_prompt, workflow_prompt, CARD_RULES, limit_prompt, existing_deck_prompt, DB_WARNING ]
           .reject(&:blank?).join("\n\n")
+      end
+
+      # Mode hook: nothing to show in Base; CardAdder seeds a sample of the
+      # deck's existing cards so the model is grounded even without calling
+      # list_notes first.
+      def existing_deck_prompt
+        ""
       end
 
       def limit_prompt

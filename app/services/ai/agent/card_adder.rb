@@ -22,6 +22,26 @@ module Ai
           "Keep new cards consistent with the deck's existing style and do not duplicate " \
           "cards it already has."
       end
+
+      private
+
+      # How many existing cards seed the prompt, and how long each field is
+      # allowed to be there (the full list stays one list_notes call away —
+      # the seed is grounding, not a substitute for the tool).
+      SAMPLE_NOTES = 10
+      SAMPLE_FIELD_MAX = 200
+
+      def existing_deck_prompt
+        total = @deck.notes.count
+        return "" if total.zero?
+
+        sample = @deck.notes.order(:id).limit(SAMPLE_NOTES).map do |note|
+          fields = note.fields.map { |v| v.to_s.truncate(SAMPLE_FIELD_MAX) }.join(" | ")
+          "  - (#{note.note_type.name}) #{fields}"
+        end.join("\n")
+        "Examples of the deck's existing cards (#{total} in total — list_notes shows " \
+          "all of them). Match their style; do not write cards that duplicate them:\n#{sample}"
+      end
     end
   end
 end

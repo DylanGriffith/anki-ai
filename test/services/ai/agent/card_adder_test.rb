@@ -51,6 +51,30 @@ class Ai::Agent::CardAdderTest < ActiveSupport::TestCase
     assert_equal %w[upsert_note_type add_note update_note delete_note list_notes finish], tool_names
   end
 
+  test "the system prompt is seeded with a sample of the deck's existing cards" do
+    @server.chat_response(tool_calls: [ { name: "finish", arguments: { summary: "x" } } ])
+
+    build_generation(card_limit: 1)
+    Ai::Agent::CardAdder.new(Ai::Generation.last).call
+
+    system_message = @server.chat_requests.first[:body]["messages"].first["content"]
+    assert_includes system_message, "Examples of the deck's existing cards (1 in total"
+    assert_includes system_message, "(Basic) eins | one"
+    assert_includes system_message, "do not write cards that duplicate them"
+  end
+
+  test "an empty deck seeds no (empty) sample section" do
+    empty_deck = @user.decks.create!(name: "Empty")
+    @existing_note.destroy!
+    @server.chat_response(tool_calls: [ { name: "finish", arguments: { summary: "x" } } ])
+
+    build_generation(card_limit: 1, deck: empty_deck)
+    Ai::Agent::CardAdder.new(Ai::Generation.last).call
+
+    system_message = @server.chat_requests.first[:body]["messages"].first["content"]
+    assert_not_includes system_message, "Examples of the deck's existing cards"
+  end
+
   test "card insert mode append puts new cards at the back of the queue" do
     @server.chat_response(tool_calls: [ { name: "add_note", arguments: { note_type: "Basic", fields: %w[zwei two] } } ])
     @server.chat_response(tool_calls: [ { name: "finish", arguments: { summary: "one" } } ])
