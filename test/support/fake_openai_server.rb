@@ -39,6 +39,12 @@ class FakeOpenAIServer
           json(200, { id: "chatcmpl-fake", object: "chat.completion",
                       choices: [ { index: 0, message: message_for(entry), finish_reason: "tool_calls" } ] })
         end
+      in [ "POST", "/images/generations" ]
+        if @server.images_fail?
+          return json(500, { error: { message: "images API down (scripted)" } })
+        end
+
+        json(200, { data: [ { b64_json: TINY_PNG_B64 } ] })
       else
         json(404, { error: { message: "no such endpoint" } })
       end
@@ -179,6 +185,10 @@ class FakeOpenAIServer
 
   attr_reader :models, :requests
 
+  # A 1x1 transparent PNG returned by /images/generations.
+  TINY_PNG_B64 =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+
   # Reject max_tokens with OpenAI's o-series error (for the retry test).
   def reject_max_tokens=(flag)
     @reject_max_tokens = flag
@@ -186,6 +196,15 @@ class FakeOpenAIServer
 
   def reject_max_tokens?
     !!@reject_max_tokens
+  end
+
+  # Script an images-API failure (for the tool-error path).
+  def images_fail=(flag)
+    @images_fail = flag
+  end
+
+  def images_fail?
+    !!@images_fail
   end
 
   def initialize(models: %w[fake-mini fake-pro], streaming: true)

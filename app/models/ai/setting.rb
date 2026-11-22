@@ -18,6 +18,12 @@ module Ai
       base_url.present? && api_key_ciphertext.present?
     end
 
+    # Image-generation API (OpenAI-compatible Images API); optional — the
+    # agent's generate_image tool is only offered when this is set.
+    def image_configured?
+      image_base_url.present? && image_api_key_ciphertext.present?
+    end
+
     # Encrypts on write, decrypts on read. Derived key changes only if
     # secret_key_base changes (documented in README).
     def api_key
@@ -28,6 +34,16 @@ module Ai
 
     def api_key=(key)
       self.api_key_ciphertext = key.present? ? encryptor.encrypt_and_sign(key.to_s) : nil
+    end
+
+    def image_api_key
+      return nil if image_api_key_ciphertext.blank?
+
+      image_encryptor.decrypt_and_verify(image_api_key_ciphertext)
+    end
+
+    def image_api_key=(key)
+      self.image_api_key_ciphertext = key.present? ? image_encryptor.encrypt_and_sign(key.to_s) : nil
     end
 
     def models
@@ -48,6 +64,15 @@ module Ai
       @encryptor ||= begin
         secret = Rails.application.secret_key_base
         key = ActiveSupport::KeyGenerator.new(secret).generate_key("ai-settings", 32)
+        ActiveSupport::MessageEncryptor.new(key, cipher: "aes-256-gcm")
+      end
+    end
+
+    # Separate derivation label so the two keys never share ciphertexts.
+    def image_encryptor
+      @image_encryptor ||= begin
+        secret = Rails.application.secret_key_base
+        key = ActiveSupport::KeyGenerator.new(secret).generate_key("ai-image-settings", 32)
         ActiveSupport::MessageEncryptor.new(key, cipher: "aes-256-gcm")
       end
     end

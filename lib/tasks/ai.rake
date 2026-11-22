@@ -12,6 +12,25 @@ namespace :ai do
     end
   end
 
+  # Optional: enables the agent's generate_image tool. The key is encrypted
+  # at rest like the chat key. Runs after ai:config (the settings row also
+  # holds the chat configuration).
+  desc "Configure the image-generation API, e.g. rake ai:image_config[https://api.openai.com/v1,sk-...,gpt-image-1]"
+  task :image_config, [ :base_url, :api_key, :model ] => :environment do |_t, args|
+    abort "usage: rake ai:image_config[base_url,api_key,model]" if args[:base_url].blank? || args[:api_key].blank?
+
+    setting = Ai::Setting.current
+    setting.assign_attributes(image_base_url: args[:base_url], image_api_key: args[:api_key],
+                              image_model: args[:model].presence || Ai::ImagesClient::DEFAULT_MODEL)
+    if setting.save
+      puts "Image API configured (#{setting.image_base_url}, model #{setting.image_model}, " \
+           "quality: low)."
+    else
+      abort setting.errors.full_messages.to_sentence + " — run rake ai:config first if " \
+              "the chat API is not set up yet"
+    end
+  end
+
   desc "Fetch and cache the model list (also refreshes what the New AI Deck form shows)"
   task models: :environment do
     setting = Ai::Setting.current

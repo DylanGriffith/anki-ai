@@ -60,6 +60,26 @@ module Ai
             }
           }
         },
+        "generate_image" => {
+          type: "function",
+          function: {
+            name: "generate_image",
+            description: "Generate a picture or diagram and attach it to the deck as a " \
+                         "media file. Use it when cards need a visual (anatomy, maps, " \
+                         "circuits, labeled diagrams). The result's `usage` shows the " \
+                         "exact <img> tag to put in a field value.",
+            parameters: {
+              type: "object",
+              properties: {
+                filename: { type: "string",
+                            description: "Simple snake-case file name ending in .png/.jpg/.jpeg/.webp, e.g. 'neuron.png'." },
+                prompt: { type: "string",
+                          description: "What the image should show, e.g. 'Simple labeled diagram of a neuron: soma, dendrites, axon, myelin sheath, synapse. Clean flat style, no watermark'." }
+              },
+              required: %w[filename prompt]
+            }
+          }
+        },
         "add_note" => {
           type: "function",
           function: {
@@ -148,7 +168,7 @@ module Ai
           }
         }
       }.freeze
-      TOOL_ORDER = %w[create_deck upsert_note_type add_note update_note delete_note list_notes search_notes finish].freeze
+      TOOL_ORDER = %w[create_deck upsert_note_type generate_image add_note update_note delete_note list_notes search_notes finish].freeze
 
       # Card-writing rules shared by both modes; mode prompts are composed
       # from these blocks.
@@ -177,6 +197,7 @@ module Ai
         ]
         @finished = false
         @cards_added = 0
+        @images_generated = 0
       end
 
       attr_reader :deck, :cards_added
@@ -248,7 +269,9 @@ module Ai
       end
 
       def offered_tools
-        %w[upsert_note_type add_note update_note delete_note list_notes search_notes finish]
+        tools = %w[upsert_note_type add_note update_note delete_note list_notes search_notes finish]
+        tools << "generate_image" if images_configured?
+        tools
       end
 
       def role_prompt
@@ -264,8 +287,8 @@ module Ai
       end
 
       def system_prompt
-        [ role_prompt, workflow_prompt, CARD_RULES, limit_prompt, existing_deck_prompt, DB_WARNING ]
-          .reject(&:blank?).join("\n\n")
+        [ role_prompt, workflow_prompt, CARD_RULES, limit_prompt, existing_deck_prompt,
+          images_prompt, DB_WARNING ].reject(&:blank?).join("\n\n")
       end
 
       # Mode hook: nothing to show in Base; CardAdder seeds a sample of the
@@ -273,6 +296,22 @@ module Ai
       # list_notes first.
       def existing_deck_prompt
         ""
+      end
+
+      # Prompt guidance for the optional image tool; only when the image API
+      # is configured (rake ai:image_config[...]).
+      def images_prompt
+        return "" unless images_configured?
+
+        "The generate_image tool creates a picture or diagram and attaches it to the " \
+          "deck as a media file (at most #{IMAGES_PER_RUN} per run). Use it when cards " \
+          "need a visual — anatomy, maps, circuits, labeled diagrams. Reference the " \
+          "generated file in field values as <img src='filename.png'> (never remote or " \
+          "data URLs), and write cards around what the image shows."
+      end
+
+      def images_configured?
+        Setting.current.image_configured?
       end
 
       def limit_prompt
@@ -316,20 +355,81 @@ module Ai
       # results the model can see and recover from, not exceptions.
       def run_tool(name, args)
         case name
-        when "create_deck"     then create_deck(args)
+        when "create_deck"      then create_deck(args)
         when "upsert_note_type" then upsert_note_type(args)
-        when "add_note"        then add_note(args)
-        when "update_note"     then update_note(args)
-        when "delete_note"     then delete_note(args)
-        when "list_notes"      then list_notes
-        when "search_notes"    then search_notes(args)
-        when "finish"          then finish(args)
+        when "generate_image"   then generate_image(args)
+        when "add_note"         then add_note(args)
+        when "update_note"      then update_note(args)
+        when "delete_note"      then delete_note(args)
+        when "list_notes"       then list_notes
+        when "search_notes"     then search_notes(args)
+        when "finish"           then finish(args)
         else                        [ { error: "unknown tool #{name.inspect}" }, true ]
         end
       rescue ActiveRecord::RecordInvalid => e
         [ { error: e.record.errors.full_messages.to_sentence }, true ]
       rescue StandardError => e
         [ { error: "#{e.class}: #{e.message}" }, true ]
+      end
+
+      # Bounds for the optional image tool: a run may generate a few low-cost
+      # images, never an unbounded gallery.
+      IMAGES_PER_RUN = 4
+      IMAGE_FILENAME = /\A[a-z0-9][a-z0-9_-]*\.(png|jpe?g|webp)\z/i
+
+      # Generates one image via the configured Images API and attaches it as
+      # a deck media file; the model then embeds <img src="..."> in a field.
+      # API/network failures are recoverable tool errors, like every tool.
+      def generate_image(args)
+        require_deck!
+        if @images_generated >= IMAGES_PER_RUN
+          return [ { error: "the run already generated #{IMAGES_PER_RUN} images — " \
+                           "that is the limit" }, true ]
+        end
+
+        filename = args.fetch("filename", "").to_s.strip
+        unless filename.match?(IMAGE_FILENAME)
+          return [ { error: "filename must be a simple name like 'neuron.png' (got #{filename.inspect})" }, true ]
+        end
+        prompt = args.fetch("prompt", "").to_s.strip
+        return [ { error: "prompt is required" }, true ] if prompt.empty?
+        if @deck.media_files.exists?(filename: filename)
+          return [ { error: "a media file named #{filename} already exists — pick " \
+                            "another name" }, true ]
+        end
+
+        setting = Setting.current
+        image = ImagesClient.new(base_url: setting.image_base_url,
+                                 api_key: setting.image_api_key)
+                            .generate(prompt: prompt,
+                                      model: setting.image_model.presence || ImagesClient::DEFAULT_MODEL)
+
+        media = @deck.media_files.create!(
+          filename: filename,
+          content_type: image[:content_type].presence || MediaFile.content_type_for(filename)
+        )
+        begin
+          attach_image_bytes(media, image[:bytes])
+        rescue StandardError
+          media.destroy!
+          raise
+        end
+
+        @images_generated += 1
+        @generation.log!(type: "status", text: "image generated", image: filename)
+        [ { media: filename, images_left: IMAGES_PER_RUN - @images_generated,
+            usage: %(<img src="#{filename}">) }, false ]
+      end
+
+      # MediaFile#attach_from uploads from a path; hand it a Tempfile.
+      def attach_image_bytes(media, bytes)
+        file = Tempfile.new([ "ai-image", ".bin" ])
+        file.binmode
+        file.write(bytes)
+        file.flush
+        media.attach_from(file.path)
+      ensure
+        file&.close!
       end
 
       def upsert_note_type(args)
