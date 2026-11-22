@@ -44,10 +44,11 @@ class Ai::Agent::GenerateImageTest < ActiveSupport::TestCase
     assert media.file.blob.byte_size.positive?
     assert_equal "image/png", media.file.blob.content_type
 
-    # The images request hit the OpenAI shape: low quality by default
+    # The images request hit the OpenAI shape: defaults verified by the live
+    # spike (gpt-image-2 at medium renders correct label text)
     image_request = @server.requests.find { |r| r[:path] == "/images/generations" }
-    assert_equal "gpt-image-1", image_request[:body]["model"]
-    assert_equal "low", image_request[:body]["quality"]
+    assert_equal "gpt-image-2", image_request[:body]["model"]
+    assert_equal "medium", image_request[:body]["quality"]
     assert_equal "1024x1024", image_request[:body]["size"]
     assert_equal "Bearer fake-image-key", image_request[:auth]
   end

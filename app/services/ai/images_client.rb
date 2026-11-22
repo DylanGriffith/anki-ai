@@ -5,12 +5,14 @@ module Ai
   # Minimal OpenAI Images API client over Net::HTTP — no SDK, one endpoint:
   #   POST {base_url}/images/generations  { model, prompt, size, quality }
   # Responses carry base64 image bytes (gpt-image models) or a URL (some
-  # OpenAI-compatible servers) — both are handled. Deliberately "low"
-  # quality by default: study cards need small, cheap images, not art.
+  # OpenAI-compatible servers) — both are handled.
   class ImagesClient
-    DEFAULT_MODEL = "gpt-image-1"
+    # Verified against the live API (Nov 2026 spike): gpt-image-2 at medium
+    # quality renders correctly-spelled diagram labels; the mini tier at low
+    # quality garbles text ("nucteus"), which would poison the cards.
+    DEFAULT_MODEL = "gpt-image-2"
     DEFAULT_SIZE = "1024x1024"
-    DEFAULT_QUALITY = "low"
+    DEFAULT_QUALITY = "medium"
 
     OPEN_TIMEOUT = 10
     READ_TIMEOUT = 120
