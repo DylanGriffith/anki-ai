@@ -23,8 +23,7 @@ namespace :ai do
     setting.assign_attributes(image_base_url: args[:base_url], image_api_key: args[:api_key],
                               image_model: args[:model].presence || Ai::ImagesClient::DEFAULT_MODEL)
     if setting.save
-      puts "Image API configured (#{setting.image_base_url}, model #{setting.image_model}, " \
-           "quality: low)."
+      puts "Image API configured (#{setting.image_base_url}, model #{setting.image_model})."
     else
       abort setting.errors.full_messages.to_sentence + " — run rake ai:config first if " \
               "the chat API is not set up yet"
