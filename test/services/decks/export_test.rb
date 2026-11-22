@@ -86,6 +86,15 @@ class Decks::ExportTest < ActiveSupport::TestCase
       %w[col notes cards revlog graves].each do |table|
         assert db.get_first_value("SELECT COUNT(*) FROM #{table}") >= 0, "#{table} present"
       end
+      # Every JSON column in col must be a map: Anki Desktop upgrades legacy
+      # packages by deserializing conf/models/decks/dconf/tags into HashMaps,
+      # and a sequence (e.g. '[]' for tags) aborts the import with
+      # "invalid type: sequence, expected a map". Real Anki exports write
+      # '{}' for the tag cache.
+      %w[conf models decks dconf tags].each do |column|
+        assert JSON.parse(db.get_first_value("SELECT #{column} FROM col")).is_a?(Hash),
+               "#{column} column must be a JSON map"
+      end
       assert_equal 6, db.get_first_value("SELECT COUNT(*) FROM cards")
       assert_equal 5, db.get_first_value("SELECT COUNT(*) FROM notes")
       assert_equal 4, db.get_first_value("SELECT COUNT(*) FROM revlog")

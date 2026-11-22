@@ -117,7 +117,7 @@ class AnkiModernApkgBuilder
       db.collation("unicase", proc { |a, b| a <=> b })
       db.execute_batch(SCHEMA)
       db.execute("INSERT INTO col (id, crt, mod, scm, ver, dty, usn, ls, conf, models, decks, dconf, tags) " \
-                 "VALUES (1, ?, ?, 0, 18, 0, 0, 0, '{}', '{}', '{}', '{}', '[]')", [ @crt, @crt ])
+                 "VALUES (1, ?, ?, 0, 18, 0, 0, 0, '{}', '{}', '{}', '{}', '{}')", [ @crt, @crt ])
 
       db.execute("INSERT INTO deck_config (id, name, mtime_secs, usn, config) VALUES (1, 'Default', 0, 0, ?)",
                  [ pb_varint(1, 1) ])
@@ -177,7 +177,7 @@ class AnkiModernApkgBuilder
       placeholder = SQLite3::Database.new(File.join(dir, "collection.anki2"))
       placeholder.execute_batch(AnkiApkgBuilder::SCHEMA)
       placeholder.execute("INSERT INTO col (id, crt, mod, scm, ver, dty, usn, ls, conf, models, decks, dconf, tags) " \
-                          "VALUES (1, ?, ?, 0, 11, 0, 0, 0, '{}', '{}', '{}', '{}', '[]')", [ @crt, @crt ])
+                          "VALUES (1, ?, ?, 0, 11, 0, 0, 0, '{}', '{}', '{}', '{}', '{}')", [ @crt, @crt ])
       placeholder.execute("INSERT INTO notes (id, guid, mid, mod, usn, tags, flds, sfld, csum, flags, data) " \
                           "VALUES (1, 'placeholder', 1, 0, 0, '', 'Please update Anki', 0, 0, 0, '')")
       placeholder.close

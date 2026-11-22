@@ -87,7 +87,7 @@ module Anki
         db.execute_batch(SCHEMA)
         db.execute(<<~SQL, col_row)
           INSERT INTO col (id, crt, mod, scm, ver, dty, usn, ls, conf, models, decks, dconf, tags)
-          VALUES (?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, ?, '[]')
+          VALUES (?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, ?, '{}')
         SQL
 
         @notes.each do |n|

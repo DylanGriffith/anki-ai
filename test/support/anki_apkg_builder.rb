@@ -94,7 +94,7 @@ class AnkiApkgBuilder
       col_params = [ 1, @crt, @crt, 0, 11, JSON.generate(@models), JSON.generate(@decks) ]
       db.execute(<<~SQL, col_params)
         INSERT INTO col (id, crt, mod, scm, ver, dty, usn, ls, conf, models, decks, dconf, tags)
-        VALUES (?, ?, ?, ?, ?, 0, 0, 0, '{}', ?, ?, '{}', '[]')
+        VALUES (?, ?, ?, ?, ?, 0, 0, 0, '{}', ?, ?, '{}', '{}')
       SQL
       @notes.each do |n|
         db.execute("INSERT INTO notes (id, guid, mid, mod, usn, tags, flds, sfld, csum, flags, data) " \
