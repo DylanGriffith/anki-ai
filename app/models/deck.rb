@@ -4,6 +4,9 @@ class Deck < ApplicationRecord
   has_many :notes, dependent: :destroy
   has_many :cards, dependent: :destroy
   has_many :media_files, dependent: :destroy
+  # The AI generation that built this deck (nil for imported decks); it goes
+  # with the deck — otherwise the deck_id foreign key blocks deck.destroy!.
+  has_many :ai_generations, class_name: "Ai::Generation", dependent: :destroy
 
   enum :visibility, { private: 0, public: 1 }, prefix: :is
 
